@@ -15,7 +15,7 @@ better-glsl) are subpar or unmaintained. Targets CLion 2025.3+ (sinceBuild 253),
 | Reformat | glsl_analyzer `textDocument/formatting`, called directly | `GlslFormat.kt` |
 | Rename | our own token-level rename; glsl_analyzer only locates the declaration | `GlslRename.kt` |
 | Diagnostics | glslang (`glslangValidator`) as an `ExternalAnnotator` | `GlslangAnnotator.kt` |
-| Settings (tool paths) | app-level `PersistentStateComponent` + Kotlin UI DSL | `GlslSettings.kt` |
+| Settings | tool paths: app-level `GlslSettings`; target/defines/include dirs: project-level `GlslProjectSettings` (`.idea/glsl.xml`); one `projectConfigurable` | `GlslSettings.kt` |
 
 glsl_analyzer 1.7.1 capabilities: completion, hover, definition, formatting. It sends **no diagnostics** (push or pull),
 **no semantic tokens**, and has **no references/rename**. That is why diagnostics, semantic colours and rename are ours.
@@ -39,11 +39,17 @@ Hover and completion go through the platform LSP client and work as-is.
 
 ## glslang integration
 
-- Runs in **plain OpenGL mode**. `-V`/`-G` are the only modes that process `#include`, but they enforce SPIR-V rules
-  (`layout(location)` on every uniform, no loose uniforms for Vulkan) and give false errors on normal OpenGL shaders.
-- So we **expand `#include` ourselves** (`expand_includes`): each included file gets its own source-string number via
+- Mode follows the project **target**: OpenGL = plain mode; Vulkan = `-V --target-env vulkan1.x` (allows `set=`,
+  `push_constant`). Never `-G`/`-V` for OpenGL: they enforce SPIR-V rules (`layout(location)` on every uniform) and give
+  false errors on normal OpenGL shaders. SPIR-V mode writes a `.spv` on success, into the working dir by default
+  (next to the shader!), so `-o` points at a temp file that is deleted.
+- Plain mode can't process `#include`, so we **expand `#include` ourselves** (`expand_includes`) in both modes, which
+  keeps them identical: each included file gets its own source-string number via
   `#line 1 N`, and errors with string != 0 are reported on the top-level `#include` line. Includes are resolved
-  relative to the file, then the project root, and read from the editor buffer if open (unsaved edits).
+  relative to the file, then the project root, then configured include dirs, and read from the editor buffer if open.
+- **Defines** are inserted as `#define` lines after `#version` plus `#line` (`inject_defines`), because `-D` needs
+  `-l` in plain mode. Done after include expansion so `IncludeSite` lines stay correct.
+- Error source names: a number, or `stdin` for string 0 before the first `#line` (SPIR-V mode). Both are parsed.
 - `#extension GL_GOOGLE_include_directive` lines are blanked (plain mode rejects them; line count is kept).
 - Only files with a stage extension are checked; a bare `.glsl` is treated as an include library.
 - glslang stops at the first undeclared identifier ("compilation terminated"): one at a time.
@@ -72,13 +78,13 @@ shipped unmodified as a separate process; glslang is BSD-3 and others.
 
 `./gradlew test`: plain JUnit 4 on pure functions, no headless IDE (fast, and independent of Nova starting up).
 The IDE-facing classes are thin wrappers; the logic they call is `internal` and text-in/result-out:
-`semantic_highlights`, `expand_includes`, `parse_glslang_output`, `problem_range`, `rename_scope`, `rename_ranges`,
-plus the lexer. One test runs the real bundled glslang end to end (skipped if it isn't built for the OS).
+`semantic_highlights`, `expand_includes`, `inject_defines`, `parse_defines`, `glslang_args`, `parse_glslang_output`,
+`problem_range`, `rename_scope`, `rename_ranges`, plus the lexer. Four tests run the real bundled glslang end to end
+(OpenGL, Vulkan, defines, includes; skipped if it isn't built for the OS).
 **Put new logic in a pure function and test it there.**
 
 ## Known gaps / ideas
 
-- Vulkan target for glslang (`set=`, `push_constant` give false errors in OpenGL mode); `-D` defines; extra include dirs.
 - Check `.glsl` include files in the context of an including shader.
 - Code folding, structure view / breadcrumbs, Find Usages (can reuse rename scoping), Ctrl+click on `#include`.
 - GLSL injection into C++ raw strings.

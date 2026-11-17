@@ -45,7 +45,17 @@ To bump a bundled tool, change its URL and SHA-256 in `bundled_files` in `build.
 
 ## Settings
 
-Settings > Languages & Frameworks > GLSL:
+Settings > Languages & Frameworks > GLSL.
+
+**Error checking (per project, saved in `.idea/glsl.xml` so it can be committed):**
+
+- **Target**: OpenGL (default) or Vulkan 1.0 to 1.4. Pick Vulkan if your shaders use `layout(set = …)`,
+  `push_constant`, `subpassInput` and similar; in OpenGL mode those are reported as errors.
+- **Defines**: e.g. `MAX_LIGHTS=8 USE_SHADOWS`, as if each shader started with those `#define`s.
+- **Include folders**: `;`-separated, relative to the project root or absolute. Searched after the shader's own
+  folder and the project root.
+
+**Tools (all projects):**
 
 - **glsl_analyzer path** / **glslangValidator path**: leave empty to use the bundled copy, then `PATH`.
   Changing the glsl_analyzer path restarts the server.
@@ -60,7 +70,7 @@ File extensions: `.glsl .vert .frag .geom .comp .tesc .tese .mesh .task .rgen .r
   its own GLSL-only action to Ctrl+B / Ctrl+click, so you'll see two actions on Ctrl+B in the keymap; that's expected.
 - **Error checking** runs on files with a stage extension only. A bare `.glsl` is treated as an include library,
   since it usually has no `#version` or `main()` and would only produce noise on its own.
-  `#include "..."` / `<...>` is resolved relative to the file, then the project root.
+  `#include "..."` / `<...>` is resolved relative to the file, then the project root, then the configured include folders.
 - glslang stops at the first undeclared identifier, so those show up one at a time.
 
 ## Troubleshooting

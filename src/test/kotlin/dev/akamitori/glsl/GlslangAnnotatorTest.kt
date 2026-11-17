@@ -22,8 +22,8 @@ class GlslangAnnotatorTest {
         return p
     }
 
-    private fun expand(text: String, dir: Path = tmp.root.toPath()) =
-        expand_includes(text, dir, null) { Files.readString(it) }
+    private fun expand(text: String, dir: Path = tmp.root.toPath(), search_dirs: List<Path> = emptyList()) =
+        expand_includes(text, dir, search_dirs) { Files.readString(it) }
 
     // ---- #include expansion ----
 
@@ -40,7 +40,7 @@ class GlslangAnnotatorTest {
     @Test fun `angle includes and project-root fallback`() {
         write("lib/a.glsl", "float a;\n")
         val shader_dir = Files.createDirectories(tmp.root.toPath().resolve("shaders"))
-        val e = expand_includes("#include <lib/a.glsl>\n", shader_dir, tmp.root.toPath()) { Files.readString(it) }
+        val e = expand("#include <lib/a.glsl>\n", shader_dir, listOf(tmp.root.toPath()))
         assertTrue(e.text, e.text.contains("float a;"))
     }
 
@@ -73,11 +73,60 @@ class GlslangAnnotatorTest {
 
     @Test fun `unsaved editor text is what gets inlined`() {
         val inc = write("a.glsl", "float on_disk;\n")
-        val e = expand_includes("#include \"a.glsl\"\n", tmp.root.toPath(), null) { p ->
+        val e = expand_includes("#include \"a.glsl\"\n", tmp.root.toPath(), emptyList()) { p ->
             if (p == inc) "float in_editor;\n" else Files.readString(p)
         }
         assertTrue(e.text.contains("in_editor"))
         assertFalse(e.text.contains("on_disk"))
+    }
+
+    @Test fun `configured include folders are searched after the file's own folder`() {
+        write("own/x.glsl", "float own;\n")
+        write("extra/x.glsl", "float extra;\n")
+        write("extra/only_here.glsl", "float only_here;\n")
+        val own = tmp.root.toPath().resolve("own")
+        val extra = tmp.root.toPath().resolve("extra")
+        assertTrue(expand("#include \"x.glsl\"\n", own, listOf(extra)).text.contains("float own;"))
+        assertTrue(expand("#include \"only_here.glsl\"\n", own, listOf(extra)).text.contains("float only_here;"))
+    }
+
+    // ---- defines and target ----
+
+    @Test fun `parse defines`() {
+        assertEquals(
+            listOf("A" to null, "B" to "1", "C" to "foo(x)", "EMPTY" to ""),
+            parse_defines("  A B=1\n C=foo(x)  EMPTY= 9bad =x"),
+        )
+        assertEquals(emptyList<Pair<String, String?>>(), parse_defines(""))
+    }
+
+    @Test fun `defines go after version and keep line numbers`() {
+        val src = "#version 460\nvoid main() {}\n"
+        assertEquals(
+            "#version 460\n#define A\n#define B 2\n#line 2 0\nvoid main() {}\n",
+            inject_defines(src, listOf("A" to null, "B" to "2")),
+        )
+        // A leading comment before #version is fine; without #version, defines go on top.
+        assertTrue(inject_defines("// hi\n#version 460\nx\n", listOf("A" to null)).startsWith("// hi\n#version 460\n#define A\n#line 3 0\n"))
+        assertEquals("#define A\n#line 1 0\nfloat x;\n", inject_defines("float x;\n", listOf("A" to null)))
+        assertEquals(src, inject_defines(src, emptyList()))
+    }
+
+    @Test fun `glslang arguments per target`() {
+        val spv = Path.of("out.spv")
+        assertEquals(listOf("--stdin", "-S", "frag"), glslang_args("frag", "opengl", spv))
+        assertEquals(
+            listOf("--stdin", "-S", "comp", "-V", "--target-env", "vulkan1.3", "-o", "out.spv"),
+            glslang_args("comp", "vulkan1.3", spv),
+        )
+    }
+
+    @Test fun `stdin as source name is this file`() {
+        // SPIR-V mode names string 0 "stdin" until the first #line directive.
+        assertEquals(
+            listOf(Problem(7, "'x' : undeclared identifier", "x", false)),
+            parse_glslang_output("stdin\nERROR: stdin:8: 'x' : undeclared identifier\nERROR: Linking fragment stage: Missing entry point\n", emptyMap()),
+        )
     }
 
     // ---- glslang output ----
@@ -121,13 +170,31 @@ class GlslangAnnotatorTest {
 
     // ---- end to end with the real (bundled) glslang, when available ----
 
-    @Test fun `real glslang finds the undeclared identifier through an include`() {
-        val exe = listOf("build/bundled/bin/linux-x64/glslang", "build/bundled/bin/windows-x64/glslang.exe")
-            .map { Path.of(it) }
-            .firstOrNull { Files.isRegularFile(it) && it.toString().endsWith(".exe") == System.getProperty("os.name").startsWith("Windows") }
-        assumeTrue("bundled glslang not built for this OS (run bundleTools)", exe != null)
-        exe!!.toFile().setExecutable(true)
+    private fun bundled_glslang(): Path? {
+        val windows = System.getProperty("os.name").startsWith("Windows")
+        // Absolute: the process runs with the temp folder as its working directory.
+        val exe = Path.of(if (windows) "build/bundled/bin/windows-x64/glslang.exe" else "build/bundled/bin/linux-x64/glslang").toAbsolutePath()
+        assumeTrue("bundled glslang not built for this OS (run bundleTools)", Files.isRegularFile(exe))
+        exe.toFile().setExecutable(true)
+        return exe
+    }
 
+    /** Runs the real glslang the way the annotator does: expand includes, inject defines, map output. */
+    private fun check(shader: String, options: CheckOptions = CheckOptions()): List<Problem> {
+        val exe = bundled_glslang()!!
+        val e = expand(shader, search_dirs = options.include_dirs)
+        val spv = tmp.newFile("out.spv").toPath()
+        val proc = ProcessBuilder(listOf(exe.toString()) + glslang_args("frag", options.target, spv))
+            .directory(tmp.root).redirectErrorStream(true).start()
+        proc.outputStream.use { it.write(inject_defines(e.text, options.defines).toByteArray()) }
+        val out = proc.inputStream.bufferedReader().readText()
+        assertTrue(proc.waitFor(10, TimeUnit.SECONDS))
+        return parse_glslang_output(out, e.includes)
+    }
+
+    private fun undeclared(line: Int, name: String) = Problem(line, "'$name' : undeclared identifier", name, false)
+
+    @Test fun `real glslang finds the undeclared identifier through an include`() {
         write("common/lighting.glsl", "float lambert(vec3 n, vec3 l) { return max(dot(n, l), 0.0); }\n")
         val shader = """
             #version 460 core
@@ -140,11 +207,36 @@ class GlslangAnnotatorTest {
                 undefined_thing = 3;
             }
         """.trimIndent()
-        val e = expand(shader)
-        val proc = ProcessBuilder(exe.toString(), "--stdin", "-S", "frag").redirectErrorStream(true).start()
-        proc.outputStream.use { it.write(e.text.toByteArray()) }
-        val out = proc.inputStream.bufferedReader().readText()
-        assertTrue(proc.waitFor(10, TimeUnit.SECONDS))
-        assertEquals(out, listOf(Problem(7, "'undefined_thing' : undeclared identifier", "undefined_thing", false)), parse_glslang_output(out, e.includes))
+        assertEquals(listOf(undeclared(7, "undefined_thing")), check(shader))
+    }
+
+    private val vulkan_shader = """
+        #version 460
+        layout(set = 0, binding = 0) uniform sampler2D tex;
+        layout(push_constant) uniform PC { vec4 tint; } pc;
+        layout(location = 0) in vec2 uv;
+        layout(location = 0) out vec4 color;
+        void main() {
+            color = texture(tex, uv) * pc.tint * SCALE;
+            undefined_thing = 1;
+        }
+    """.trimIndent()
+
+    @Test fun `real glslang in Vulkan mode accepts set and push_constant`() {
+        val options = CheckOptions(target = "vulkan1.3", defines = listOf("SCALE" to "2.0"))
+        assertEquals(listOf(undeclared(7, "undefined_thing")), check(vulkan_shader, options))
+        assertFalse("no .spv left next to the shader", Files.exists(tmp.root.toPath().resolve("frag.spv")))
+    }
+
+    @Test fun `real glslang in OpenGL mode rejects Vulkan-only syntax`() {
+        val problems = check(vulkan_shader, CheckOptions(defines = listOf("SCALE" to "2.0")))
+        assertTrue(problems.toString(), problems.isNotEmpty() && problems.none { it.token == "undefined_thing" && it.line != 7 })
+        assertTrue(problems.toString(), problems.first().line in 1..2)  // set= / push_constant
+    }
+
+    @Test fun `real glslang sees injected defines`() {
+        // Without the define, SCALE is undeclared on line 7 (0-based 6); with it, only undefined_thing remains.
+        val options = CheckOptions(target = "vulkan1.3")
+        assertEquals(listOf(undeclared(6, "SCALE")), check(vulkan_shader, options))
     }
 }

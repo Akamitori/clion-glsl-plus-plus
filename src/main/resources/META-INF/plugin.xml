@@ -1,11 +1,22 @@
 <idea-plugin>
     <id>dev.akamitori.glsl</id>
-    <name>GLSL (glsl_analyzer)</name>
+    <name>GLSL</name>
     <vendor>Akamitori</vendor>
     <description><![CDATA[
-    GLSL support backed by the <a href="https://github.com/nolanderc/glsl_analyzer">glsl_analyzer</a> language server:
-    completion, go to definition, find usages, hover docs, diagnostics, formatting and #include awareness.
-    A small built-in lexer provides instant syntax highlighting.
+    <p>GLSL support for CLion, including CLion Nova.</p>
+    <ul>
+      <li><b>Navigation and docs</b>: Go to Declaration (Ctrl+B / Ctrl+click), Ctrl+hover underline, hover docs,
+          completion and Reformat Code, via the
+          <a href="https://github.com/nolanderc/glsl_analyzer">glsl_analyzer</a> language server.</li>
+      <li><b>Error checking</b>: undeclared identifiers, type and syntax errors as you type, via
+          <a href="https://github.com/KhronosGroup/glslang">glslang</a>, with <code>#include</code> resolved.
+          OpenGL or Vulkan target, defines and include folders per project.</li>
+      <li><b>Rename</b> (Shift+F6) for functions, variables, parameters, struct members and macros, across files.</li>
+      <li><b>Highlighting</b>: instant lexer colours plus semantic colours for your functions, parameters, globals,
+          structs, fields, swizzles, macros and layout qualifiers, with built-in functions in their own colour.</li>
+    </ul>
+    <p>glsl_analyzer and glslang are bundled for Linux x64 and Windows x64, so nothing else needs installing there.
+       On other platforms they are picked up from <code>PATH</code>.</p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
@@ -31,7 +42,7 @@
         <additionalTextAttributes scheme="Light" file="colorSchemes/GlslDefault.xml"/>
         <additionalTextAttributes scheme="IntelliJ Light" file="colorSchemes/GlslDefault.xml"/>
 
-        <applicationConfigurable parentId="language"
+        <projectConfigurable parentId="language"
                                  id="dev.akamitori.glsl.settings"
                                  displayName="GLSL"
                                  instance="dev.akamitori.glsl.GlslConfigurable"/>

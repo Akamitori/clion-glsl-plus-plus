@@ -20,11 +20,12 @@ import java.nio.file.Path
 /**
  * Error checking via glslang (glslangValidator), since glsl_analyzer reports no diagnostics.
  *
- * glslang runs in plain OpenGL mode: the SPIR-V modes (-V/-G) are the only ones that process
- * #include, but they also enforce SPIR-V rules (layout(location) on every uniform, no loose uniforms
- * for Vulkan) that are wrong for ordinary OpenGL shaders. So we expand #include ourselves and give
- * every included file its own source-string number via `#line`, which lets errors be mapped back:
+ * The project's target picks the mode: OpenGL runs glslang in plain mode, Vulkan in SPIR-V mode
+ * (-V --target-env vulkan1.x), which is what allows `layout(set=)`, push constants and so on.
+ * Either way we expand #include ourselves (plain mode can't, and it keeps both modes identical),
+ * giving every included file its own source-string number via `#line` so errors map back:
  * string 0 is this file, anything else is reported on the #include line that pulled it in.
+ * Defines are inserted as `#define` lines after #version, for the same reason (-D needs -l in plain mode).
  *
  * Only files with a stage extension are checked. A bare .glsl is usually an include library that
  * doesn't compile on its own (no #version, no main), so checking it would only produce noise.
@@ -33,29 +34,39 @@ import java.nio.file.Path
 // the daemon skips it then, and errors only appear after the next edit.
 class GlslangAnnotator : ExternalAnnotator<GlslangAnnotator.Input, List<Problem>>(), DumbAware {
 
-    class Input(val text: String, val dir: Path, val stage: String, val project_dir: Path?)
-
+    class Input(val text: String, val dir: Path, val stage: String, val project_dir: Path?, val options: CheckOptions)
 
     override fun collectInformation(file: PsiFile, editor: Editor, hasErrors: Boolean): Input? {
         val vfile = file.virtualFile ?: return null
         val stage = STAGES[vfile.extension?.lowercase()] ?: return null
         val dir = vfile.parent?.toNioPathOrNull() ?: return null
         val project_dir = file.project.basePath?.let { Path.of(it) }
-        return Input(editor.document.text, dir, stage, project_dir)
+        val options = GlslProjectSettings.getInstance(file.project).check_options(project_dir)
+        return Input(editor.document.text, dir, stage, project_dir, options)
     }
 
     override fun doAnnotate(input: Input): List<Problem> {
         val exe = find_glslang() ?: return emptyList()
-        val expanded = expand_includes(input.text, input.dir, input.project_dir, ::current_text)
+        val search_dirs = listOfNotNull(input.project_dir) + input.options.include_dirs
+        val expanded = expand_includes(input.text, input.dir, search_dirs, ::current_text)
+        val source = inject_defines(expanded.text, input.options.defines)
 
-        val cmd = GeneralCommandLine(exe.toString(), "--stdin", "-S", input.stage)
-            .withWorkDirectory(input.dir.toFile())
-            .withCharset(StandardCharsets.UTF_8)
-        val handler = CapturingProcessHandler(cmd)
-        handler.processInput.use { it.write(expanded.text.toByteArray(StandardCharsets.UTF_8)) }
-        val out = handler.runProcess(5000)
-        if (out.isTimeout) return emptyList()
-        return parse_glslang_output(out.stdout + "\n" + out.stderr, expanded.includes)
+        // SPIR-V mode writes a .spv on success (into the working dir by default, i.e. next to the
+        // shader), so send it to a temp file and delete it.
+        val spv = Files.createTempFile("glsl-check-", ".spv")
+        try {
+            val cmd = GeneralCommandLine(exe.toString())
+                .withParameters(glslang_args(input.stage, input.options.target, spv))
+                .withWorkDirectory(input.dir.toFile())
+                .withCharset(StandardCharsets.UTF_8)
+            val handler = CapturingProcessHandler(cmd)
+            handler.processInput.use { it.write(source.toByteArray(StandardCharsets.UTF_8)) }
+            val out = handler.runProcess(5000)
+            if (out.isTimeout) return emptyList()
+            return parse_glslang_output(out.stdout + "\n" + out.stderr, expanded.includes)
+        } finally {
+            Files.deleteIfExists(spv)
+        }
     }
 
     override fun apply(file: PsiFile, problems: List<Problem>, holder: AnnotationHolder) {
@@ -88,6 +99,52 @@ data class IncludeSite(val line: Int, val name: String)
 
 class Expanded(val text: String, val includes: Map<Int, IncludeSite>)
 
+/** Per-project checker options. target is "opengl" or a glslang --target-env like "vulkan1.3". */
+data class CheckOptions(
+    val target: String = "opengl",
+    val defines: List<Pair<String, String?>> = emptyList(),
+    val include_dirs: List<Path> = emptyList(),
+)
+
+/** glslang command line (after the executable) for a stage and target. */
+internal fun glslang_args(stage: String, target: String, spv_out: Path): List<String> =
+    if (target == "opengl") listOf("--stdin", "-S", stage)
+    else listOf("--stdin", "-S", stage, "-V", "--target-env", target, "-o", spv_out.toString())
+
+private val DEFINE_NAME = Regex("^[A-Za-z_][A-Za-z0-9_]*$")
+
+/** `A B=1 C=foo(x)` -> [(A, null), (B, 1), (C, foo(x))]. Invalid names are dropped. */
+internal fun parse_defines(text: String): List<Pair<String, String?>> =
+    text.split(Regex("\\s+")).filter { it.isNotEmpty() }.mapNotNull { item ->
+        val name = item.substringBefore('=')
+        val value = if ('=' in item) item.substringAfter('=') else null
+        if (DEFINE_NAME.matches(name)) name to value else null
+    }
+
+/**
+ * Inserts `#define`s right after the #version line (it must stay first), then `#line` to restore
+ * this file's numbering. Without a #version line they go at the very top.
+ */
+internal fun inject_defines(text: String, defines: List<Pair<String, String?>>): String {
+    if (defines.isEmpty()) return text
+    val lines = text.split('\n')
+    val version = lines.indexOfFirst { VERSION.containsMatchIn(it) }.takeIf { first_significant_line(lines) == it }
+    val block = defines.joinToString("") { (name, value) -> "#define $name${value?.let { " $it" } ?: ""}\n" }
+    return if (version == null) {
+        block + "#line 1 0\n" + text
+    } else {
+        val head = lines.subList(0, version + 1).joinToString("\n") + "\n"
+        val rest = lines.subList(version + 1, lines.size).joinToString("\n")
+        head + block + "#line ${version + 2} 0\n" + rest
+    }
+}
+
+private val VERSION = Regex("^\\s*#\\s*version\\b")
+
+/** Index of the first line that isn't blank or a // comment (good enough to find a leading #version). */
+private fun first_significant_line(lines: List<String>): Int =
+    lines.indexOfFirst { it.isNotBlank() && !it.trimStart().startsWith("//") }
+
 internal val STAGES = mapOf(
     "vert" to "vert", "vsh" to "vert", "frag" to "frag", "fsh" to "frag",
     "geom" to "geom", "comp" to "comp", "tesc" to "tesc", "tese" to "tese",
@@ -95,7 +152,8 @@ internal val STAGES = mapOf(
     "rgen" to "rgen", "rint" to "rint", "rahit" to "rahit", "rchit" to "rchit",
     "rmiss" to "rmiss", "rcall" to "rcall",
 )
-private val DIAG = Regex("^(ERROR|WARNING): (\\d+):(\\d+): (.*)$")
+// The source string is a number, or "stdin" for string 0 until the first #line directive.
+private val DIAG = Regex("^(ERROR|WARNING): (\\d+|stdin):(\\d+): (.*)$")
 private val QUOTED = Regex("'([^']*)'")
 private val INCLUDE = Regex("^\\s*#\\s*include\\s*[<\"]([^>\"]+)[>\"]")
 private val INCLUDE_EXT = Regex("^\\s*#\\s*extension\\s+GL_(GOOGLE_include_directive|ARB_shading_language_include)\\b")
@@ -104,9 +162,10 @@ private val INCLUDE_EXT = Regex("^\\s*#\\s*extension\\s+GL_(GOOGLE_include_direc
  * Inlines #include files so glslang can run in plain OpenGL mode. Each included file gets its own
  * source-string number via `#line 1 N`, and `#line <next> <parent>` restores numbering afterwards,
  * so errors map back: string 0 is this file, others belong to the #include line in `includes`.
+ * Includes are looked up next to the including file, then in `search_dirs` in order.
  * Unresolvable or recursive includes are left as-is so glslang reports them on the right line.
  */
-internal fun expand_includes(text: String, dir: Path, project_dir: Path?, read: (Path) -> String): Expanded {
+internal fun expand_includes(text: String, dir: Path, search_dirs: List<Path>, read: (Path) -> String): Expanded {
     val includes = HashMap<Int, IncludeSite>()
     var next_string = 1
     val out = StringBuilder()
@@ -120,7 +179,7 @@ internal fun expand_includes(text: String, dir: Path, project_dir: Path?, read: 
                 return@forEachIndexed
             }
             val name = m.groupValues[1]
-            val path = resolve_include(name, dir, project_dir)
+            val path = resolve_include(name, dir, search_dirs)
             val my_site = site ?: IncludeSite(i, name)  // nested includes report on the top-level #include
             if (path == null || path in stack || stack.size > 16) {
                 out.append(line).append('\n')
@@ -139,8 +198,9 @@ internal fun expand_includes(text: String, dir: Path, project_dir: Path?, read: 
     return Expanded(out.toString(), includes)
 }
 
-private fun resolve_include(name: String, dir: Path, project_dir: Path?): Path? =
-    listOfNotNull(dir, project_dir)
+/** Relative to the including file first, then each search dir (project root, configured include folders). */
+private fun resolve_include(name: String, dir: Path, search_dirs: List<Path>): Path? =
+    (listOf(dir) + search_dirs)
         .map { it.resolve(name).normalize() }
         .firstOrNull { Files.isRegularFile(it) }
 
@@ -154,7 +214,7 @@ internal fun parse_glslang_output(output: String, includes: Map<Int, IncludeSite
             if (message.endsWith("compilation terminated") || message.isEmpty()) return@mapNotNull null
             val token = QUOTED.find(message)?.groupValues?.get(1)?.takeIf { it.isNotBlank() }
             val warning = kind == "WARNING"
-            val string = string_no.toInt()
+            val string = string_no.toIntOrNull() ?: 0
             if (string == 0) {
                 Problem(line_no.toInt() - 1, message, token, warning)
             } else {
