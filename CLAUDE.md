@@ -18,6 +18,7 @@ better-glsl) are subpar or unmaintained. Targets CLion 2026.2+ (sinceBuild 262),
 | Find Usages | same occurrence search as rename (`find_symbol_occurrences`), shown in the Find tool window | `GlslFindUsages.kt` |
 | Folding | multi-line `{}` blocks and block comments from the lexer (`fold_regions`) | `GlslFolding.kt` |
 | Structure view | heuristic top-level outline (`outline`): functions, structs/blocks + members, globals, macros | `GlslStructure.kt` |
+| Breadcrumbs | outline + `crumb_path`; crumbs are the *name tokens* of enclosing declarations, `getParent` walks outward (flat PSI) | `GlslStructure.kt` |
 | `#include` navigation | Ctrl+B / Ctrl+click on the path (`include_at` + `resolve_include`) | `GlslNavigation.kt` |
 | Settings | tool paths: app-level `GlslSettings`; target/defines/include dirs: project-level `GlslProjectSettings` (`.idea/glsl.xml`); one `projectConfigurable` | `GlslSettings.kt` |
 
@@ -97,13 +98,13 @@ shipped unmodified as a separate process; glslang is BSD-3 and others.
 `./gradlew test`: plain JUnit 4 on pure functions, no headless IDE (fast, and independent of Nova starting up).
 The IDE-facing classes are thin wrappers; the logic they call is `internal` and text-in/result-out:
 `semantic_highlights`, `expand_includes`, `find_host`, `problems_in`, `inject_defines`, `parse_defines`, `glslang_args`,
-`problem_range`, `rename_scope`, `rename_ranges`, `fold_regions`, `outline`, `include_at`, plus the lexer. Five tests run the real bundled glslang end to end
+`problem_range`, `rename_scope`, `rename_ranges`, `fold_regions`, `outline`, `crumb_path`, `include_at`, plus the lexer. Five tests run the real bundled glslang end to end
 (OpenGL, Vulkan, defines, includes, library via host; skipped if it isn't built for the OS).
 **Put new logic in a pure function and test it there.**
 
 ## Known gaps / ideas
 
-- Breadcrumbs / sticky lines: need a nested PSI, which this plugin deliberately doesn't have.
+- Sticky lines: would need a nested PSI (breadcrumbs work around it via `BreadcrumbsProvider.getParent`).
 - GLSL injection into C++ raw strings.
 - Never tested on Windows. No macOS bundle (tools are found on PATH there).
 

@@ -121,4 +121,30 @@ class GlslStructureTest {
         assertEquals(null, include_at(text, text.indexOf("float")))
         assertEquals(null, include_at(text, text.length + 1))
     }
+
+    // ---- breadcrumbs ----
+
+    private fun crumbs_at(marker: String, delta: Int = 0) =
+        crumb_path(outline(shader), shader.indexOf(marker) + delta).map { it.name }
+
+    @Test fun `breadcrumb path follows the caret`() {
+        assertEquals(listOf("lambert"), crumbs_at("return 1.0"))            // deep in lambert's body
+        assertEquals(listOf("lambert"), crumbs_at("lambert(vec3"))           // on the name itself
+        assertEquals(listOf("lambert"), crumbs_at("return max", 28))        // on the closing brace
+        assertEquals(listOf("Material", "albedo"), crumbs_at("albedo"))      // a struct field
+        assertEquals(listOf("Material"), crumbs_at("vec3 albedo"))           // inside the struct, not on a field
+        assertEquals(listOf("Camera", "eye"), crumbs_at("eye;"))             // interface block member
+        assertEquals(listOf("main"), crumbs_at("main() { }", 8))
+        assertEquals(emptyList<String>(), crumbs_at("precision"))           // top level
+        assertEquals(emptyList<String>(), crumbs_at("/* A"))                 // between declarations
+    }
+
+    @Test fun `function and block ends cover their closing brace`() {
+        val items = outline(shader)
+        val lambert = items.single { it.name == "lambert" }
+        assertEquals('}', shader[lambert.end - 1])
+        assertEquals("lambert", shader.substring(lambert.offset, lambert.offset + 7))
+        val material = items.single { it.name == "Material" }
+        assertEquals('}', shader[material.end - 1])
+    }
 }

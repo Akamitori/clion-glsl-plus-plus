@@ -56,6 +56,7 @@
 
         <lang.foldingBuilder language="GLSL" implementationClass="dev.akamitori.glsl.GlslFoldingBuilder"/>
         <lang.psiStructureViewFactory language="GLSL" implementationClass="dev.akamitori.glsl.GlslStructureViewFactory"/>
+        <breadcrumbsInfoProvider implementation="dev.akamitori.glsl.GlslBreadcrumbsProvider"/>
 
         <!-- glsl_analyzer sends no diagnostics; glslang provides them. -->
         <externalAnnotator language="GLSL" implementationClass="dev.akamitori.glsl.GlslangAnnotator"/>

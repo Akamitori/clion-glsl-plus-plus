@@ -7,6 +7,7 @@
 - Bundled-tool and PATH lookup no longer use internal or deprecated platform helpers.
 - **All errors at once**: glslang used to stop at the first error of any kind; it now reports every error in the
   file (except after a syntax error). Falls back to first-error-only if glslang's error recovery crashes.
+- **Breadcrumbs**: the editor bar shows the enclosing function, struct or block (and member).
 - **Shadowing**: rename no longer renames a local that happens to share a global's name, and such a local is no
   longer coloured as the global.
 

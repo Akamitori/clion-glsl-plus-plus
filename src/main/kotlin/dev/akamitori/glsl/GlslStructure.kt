@@ -10,6 +10,7 @@ import com.intellij.lang.PsiStructureViewFactory
 import com.intellij.navigation.ItemPresentation
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
+import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import javax.swing.Icon
 
@@ -66,14 +67,25 @@ private fun icon_for(kind: OutlineKind): Icon = when (kind) {
 
 enum class OutlineKind { FUNCTION, STRUCT, BLOCK, FIELD, VARIABLE, MACRO }
 
-/** name is what the tree shows; detail is the grey text after it; offset is where navigation goes. */
+/**
+ * name is what the tree shows; detail is the grey text after it; offset is the name's position (where
+ * navigation goes); end is where the declaration ends: the closing brace for functions, structs and
+ * blocks, the end of the name otherwise. [offset, end] is the range breadcrumbs treat as "inside" it.
+ */
 data class OutlineItem(
     val kind: OutlineKind,
     val name: String,
     val detail: String?,
     val offset: Int,
     val children: List<OutlineItem> = emptyList(),
+    val end: Int = offset + name.length,
 )
+
+/** Declarations containing `offset`, outermost first (e.g. [Material, shininess] or [lambert]). Pure. */
+internal fun crumb_path(items: List<OutlineItem>, offset: Int): List<OutlineItem> {
+    val hit = items.firstOrNull { offset >= it.offset && offset <= it.end } ?: return emptyList()
+    return listOf(hit) + crumb_path(hit.children, offset)
+}
 
 private val STORAGE = setOf("uniform", "in", "out", "inout", "buffer", "shared", "const", "attribute", "varying")
 
@@ -161,7 +173,8 @@ private fun block_items(text: CharSequence, toks: List<LexTok>, start: Int, open
         val name = toks.getOrNull(lp - 1)?.takeIf { it.type == GlslTokens.IDENT } ?: return emptyList()
         val ret = (start until lp - 1).joinToString(" ") { toks[it].text }
         val params = collapse(text.subSequence(toks[lp].start, toks[open - 1].end))
-        return listOf(OutlineItem(OutlineKind.FUNCTION, name.text, "$params${if (ret.isEmpty()) "" else ": $ret"}", name.start))
+        return listOf(OutlineItem(OutlineKind.FUNCTION, name.text, "$params${if (ret.isEmpty()) "" else ": $ret"}", name.start,
+            end = toks[close].end))
     }
     val is_struct = (start until open).any { toks[it].type == GlslTokens.KEYWORD && toks[it].text == "struct" }
     val name = toks.getOrNull(open - 1)?.takeIf { it.type == GlslTokens.IDENT }
@@ -175,11 +188,13 @@ private fun block_items(text: CharSequence, toks: List<LexTok>, start: Int, open
     }
     val instance = toks.getOrNull(close + 1)?.takeIf { it.type == GlslTokens.IDENT }
     if (is_struct) {
-        return listOf(OutlineItem(OutlineKind.STRUCT, name?.text ?: "(anonymous struct)", null, (name ?: toks[open]).start, members))
+        return listOf(OutlineItem(OutlineKind.STRUCT, name?.text ?: "(anonymous struct)", null, (name ?: toks[open]).start, members,
+            end = toks[close].end))
     }
     val qualifiers = (start until open).map { toks[it] }.filter { it.type == GlslTokens.KEYWORD && it.text in STORAGE }.joinToString(" ") { it.text }
     val detail = listOfNotNull(qualifiers.ifEmpty { null }, instance?.let { "as ${it.text}" }).joinToString(", ").ifEmpty { null }
-    return listOf(OutlineItem(OutlineKind.BLOCK, name?.text ?: "(block)", detail, (name ?: toks[open]).start, members))
+    return listOf(OutlineItem(OutlineKind.BLOCK, name?.text ?: "(block)", detail, (name ?: toks[open]).start, members,
+        end = toks[close].end))
 }
 
 /**
@@ -229,3 +244,47 @@ private fun declaration_items(toks: List<LexTok>, start: Int, end: Int, kind: Ou
 }
 
 private fun collapse(s: CharSequence) = s.toString().replace(Regex("\\s+"), " ").replace("( ", "(").replace(" )", ")")
+
+// ---- breadcrumbs ----
+
+/**
+ * Breadcrumbs from the outline. The PSI is flat (every token's parent is the file), so instead of PSI
+ * parents we hand out the *name token* of each enclosing declaration as its crumb, and getParent walks
+ * outward through those. Example: caret in lambert's body -> crumb "lambert()".
+ */
+class GlslBreadcrumbsProvider : com.intellij.ui.breadcrumbs.BreadcrumbsProvider {
+    override fun getLanguages(): Array<com.intellij.lang.Language> = arrayOf(GlslLanguage)
+
+    override fun acceptElement(e: PsiElement) = item_named_by(e) != null
+
+    override fun getElementInfo(e: PsiElement): String {
+        val item = item_named_by(e) ?: return e.text
+        return if (item.kind == OutlineKind.FUNCTION) "${item.name}()" else item.name
+    }
+
+    override fun getElementTooltip(e: PsiElement): String? = item_named_by(e)?.let { listOfNotNull(it.name, it.detail).joinToString(" ") }
+
+    override fun getParent(e: PsiElement): PsiElement? {
+        val file = e.containingFile as? GlslFile ?: return null
+        if (e is PsiFile) return null
+        val path = crumb_path(cached_outline(file), e.textRange.startOffset)
+        // If e is a crumb itself, its parent is the next declaration out; otherwise the innermost one.
+        val own = path.indexOfFirst { it.offset == e.textRange.startOffset }
+        val parent = if (own >= 0) path.getOrNull(own - 1) else path.lastOrNull()
+        return parent?.let { file.findElementAt(it.offset) } ?: file
+    }
+
+    /** The outline item whose name token is `e`, if any. */
+    private fun item_named_by(e: PsiElement): OutlineItem? {
+        if (e is PsiFile) return null
+        val file = e.containingFile as? GlslFile ?: return null
+        val start = e.textRange.startOffset
+        return crumb_path(cached_outline(file), start).firstOrNull { it.offset == start }
+    }
+}
+
+/** The outline, recomputed only when the file changes. */
+private fun cached_outline(file: GlslFile): List<OutlineItem> =
+    com.intellij.psi.util.CachedValuesManager.getCachedValue(file) {
+        com.intellij.psi.util.CachedValueProvider.Result.create(outline(file.viewProvider.contents), file)
+    }
