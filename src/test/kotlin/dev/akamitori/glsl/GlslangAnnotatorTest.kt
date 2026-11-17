@@ -34,7 +34,11 @@ class GlslangAnnotatorTest {
             "#version 460\n#line 1 1\nfloat lambert() { return 1.0; }\n\n#line 3 0\nvoid main() {}\n\n",
             e.text,
         )
-        assertEquals(mapOf(1 to IncludeSite(1, "common/light.glsl")), e.includes)
+        assertEquals(
+            SourceString(tmp.root.toPath().resolve("common/light.glsl"), parent = 0, line_in_parent = 1, name = "common/light.glsl"),
+            e.strings[1],
+        )
+        assertEquals(2, e.strings.size)  // 0 = main, 1 = the include
     }
 
     @Test fun `angle includes and project-root fallback`() {
@@ -44,23 +48,23 @@ class GlslangAnnotatorTest {
         assertTrue(e.text, e.text.contains("float a;"))
     }
 
-    @Test fun `nested include reports on the top-level include line`() {
+    @Test fun `nested includes record their parent`() {
         write("a.glsl", "#include \"b.glsl\"\n")
         write("b.glsl", "float b;\n")
         val e = expand("// x\n#include \"a.glsl\"\n")
         assertTrue(e.text.contains("float b;"))
-        assertEquals(setOf(IncludeSite(1, "a.glsl")), e.includes.values.toSet())
-        assertEquals(2, e.includes.size)  // a.glsl and b.glsl get their own source-string numbers
+        assertEquals(SourceString(tmp.root.toPath().resolve("a.glsl"), 0, 1, "a.glsl"), e.strings[1])
+        assertEquals(SourceString(tmp.root.toPath().resolve("b.glsl"), 1, 0, "b.glsl"), e.strings[2])
     }
 
     @Test fun `missing and recursive includes are left in place`() {
         val missing = expand("#include \"nope.glsl\"\n")
         assertEquals("#include \"nope.glsl\"\n\n", missing.text)
-        assertTrue(missing.includes.isEmpty())
+        assertEquals(setOf(0), missing.strings.keys)
 
         write("self.glsl", "#include \"self.glsl\"\nfloat s;\n")
         val rec = expand("#include \"self.glsl\"\n")
-        assertEquals(1, rec.includes.size)
+        assertEquals(setOf(0, 1), rec.strings.keys)
         assertTrue(rec.text.contains("float s;"))
     }
 
@@ -125,7 +129,7 @@ class GlslangAnnotatorTest {
         // SPIR-V mode names string 0 "stdin" until the first #line directive.
         assertEquals(
             listOf(Problem(7, "'x' : undeclared identifier", "x", false)),
-            parse_glslang_output("stdin\nERROR: stdin:8: 'x' : undeclared identifier\nERROR: Linking fragment stage: Missing entry point\n", emptyMap()),
+            problems_in("stdin\nERROR: stdin:8: 'x' : undeclared identifier\nERROR: Linking fragment stage: Missing entry point\n", main_only, null),
         )
     }
 
@@ -144,16 +148,62 @@ class GlslangAnnotatorTest {
                 Problem(11, "'undefined_thing' : undeclared identifier", "undefined_thing", false),
                 Problem(2, "'f' : something odd", "f", true),
             ),
-            parse_glslang_output(out, emptyMap()),
+            problems_in(out, main_only, null),
         )
     }
 
-    @Test fun `errors in included code land on the include line`() {
-        val out = "ERROR: 1:4: 'oops' : undeclared identifier\nERROR: 7:1: 'x' : unknown string\n"
+    private val main_only = Expanded("", mapOf(0 to SourceString(null, null, -1, "")))
+
+    /** main (0) includes lib.glsl (1) on line 1; lib includes util.glsl (2) on line 4. */
+    private val chain = Expanded("", mapOf(
+        0 to SourceString(Path.of("/p/main.frag"), null, -1, "main.frag"),
+        1 to SourceString(Path.of("/p/lib.glsl"), 0, 1, "lib.glsl"),
+        2 to SourceString(Path.of("/p/util.glsl"), 1, 4, "util.glsl"),
+    ))
+    private val chain_out = """
+        ERROR: 0:9: 'in_main' : undeclared identifier
+        ERROR: 1:3: 'in_lib' : undeclared identifier
+        ERROR: 2:2: 'in_util' : undeclared identifier
+        ERROR: 7:1: 'x' : unknown string
+    """.trimIndent()
+
+    @Test fun `main file view puts included errors on the include line`() {
         assertEquals(
-            listOf(Problem(1, "In light.glsl:4: 'oops' : undeclared identifier", null, false)),
-            parse_glslang_output(out, mapOf(1 to IncludeSite(1, "light.glsl"))),
+            listOf(
+                Problem(8, "'in_main' : undeclared identifier", "in_main", false),
+                Problem(1, "In lib.glsl:3: 'in_lib' : undeclared identifier", null, false),
+                Problem(1, "In util.glsl:2: 'in_util' : undeclared identifier", null, false),
+            ),
+            problems_in(chain_out, chain, null),
         )
+    }
+
+    @Test fun `library view keeps only its own errors and those of what it includes`() {
+        assertEquals(
+            listOf(
+                Problem(2, "'in_lib' : undeclared identifier", "in_lib", false),
+                Problem(4, "In util.glsl:2: 'in_util' : undeclared identifier", null, false),
+            ),
+            problems_in(chain_out, chain, Path.of("/p/lib.glsl")),
+        )
+        assertEquals(listOf(Problem(1, "'in_util' : undeclared identifier", "in_util", false)),
+            problems_in(chain_out, chain, Path.of("/p/util.glsl")))
+        assertEquals(emptyList<Problem>(), problems_in(chain_out, chain, Path.of("/p/unrelated.glsl")))
+    }
+
+    // ---- finding a host shader for a library ----
+
+    @Test fun `host is a shader that includes the library, directly or not, preferring the same folder`() {
+        val lib = write("shaders/common/lighting.glsl", "float lambert() { return 1.0; }\n")
+        write("shaders/common/mid.glsl", "#include \"lighting.glsl\"\n")
+        val far = write("other/far.frag", "#include \"../shaders/common/lighting.glsl\"\nvoid main() {}\n")
+        val near = write("shaders/common/near.frag", "#include \"mid.glsl\"\nvoid main() {}\n")
+        val unrelated = write("shaders/common/aaa.frag", "void main() {}\n")
+        val read = { p: Path -> Files.readString(p) }
+        assertEquals(near, find_host(lib, listOf(far, unrelated, near), emptyList(), read))
+        assertEquals(far, find_host(lib, listOf(far, unrelated), emptyList(), read))
+        assertEquals(null, find_host(lib, listOf(unrelated), emptyList(), read))
+        assertEquals(null, find_host(lib, listOf(tmp.root.toPath().resolve("gone.frag")), emptyList(), read))  // unreadable
     }
 
     // ---- error ranges ----
@@ -180,16 +230,16 @@ class GlslangAnnotatorTest {
     }
 
     /** Runs the real glslang the way the annotator does: expand includes, inject defines, map output. */
-    private fun check(shader: String, options: CheckOptions = CheckOptions()): List<Problem> {
+    private fun check(shader: String, options: CheckOptions = CheckOptions(), target: Path? = null): List<Problem> {
         val exe = bundled_glslang()!!
         val e = expand(shader, search_dirs = options.include_dirs)
-        val spv = tmp.newFile("out.spv").toPath()
+        val spv = tmp.newFile().toPath()  // unique per call
         val proc = ProcessBuilder(listOf(exe.toString()) + glslang_args("frag", options.target, spv))
             .directory(tmp.root).redirectErrorStream(true).start()
         proc.outputStream.use { it.write(inject_defines(e.text, options.defines).toByteArray()) }
         val out = proc.inputStream.bufferedReader().readText()
         assertTrue(proc.waitFor(10, TimeUnit.SECONDS))
-        return parse_glslang_output(out, e.includes)
+        return problems_in(out, e, target)
     }
 
     private fun undeclared(line: Int, name: String) = Problem(line, "'$name' : undeclared identifier", name, false)
@@ -238,5 +288,14 @@ class GlslangAnnotatorTest {
         // Without the define, SCALE is undeclared on line 7 (0-based 6); with it, only undefined_thing remains.
         val options = CheckOptions(target = "vulkan1.3")
         assertEquals(listOf(undeclared(6, "SCALE")), check(vulkan_shader, options))
+    }
+
+    @Test fun `real glslang checks a library through its host`() {
+        val lib = write("common/lighting.glsl", "float lambert(vec3 n, vec3 l) {\n    return max(dot(n, l), 0.0) * not_declared;\n}\n")
+        val shader = "#version 460 core\n#include \"common/lighting.glsl\"\nout vec4 c;\nvoid main() { c = vec4(lambert(vec3(1.0), vec3(1.0))); }\n"
+        // As seen from the library: the error is on its own line 2 (0-based 1).
+        assertEquals(listOf(undeclared(1, "not_declared")), check(shader, target = lib))
+        // As seen from the shader: reported on its #include line.
+        assertEquals(listOf(Problem(1, "In common/lighting.glsl:2: 'not_declared' : undeclared identifier", null, false)), check(shader))
     }
 }

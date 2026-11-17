@@ -56,7 +56,10 @@ Hover and completion go through the platform LSP client and work as-is.
   `-l` in plain mode. Done after include expansion so `IncludeSite` lines stay correct.
 - Error source names: a number, or `stdin` for string 0 before the first `#line` (SPIR-V mode). Both are parsed.
 - `#extension GL_GOOGLE_include_directive` lines are blanked (plain mode rejects them; line count is kept).
-- Only files with a stage extension are checked; a bare `.glsl` is treated as an include library.
+- Stage files are compiled as themselves. A bare `.glsl` (include library) is compiled **through a host**: the first
+  project stage file whose include tree contains it (`find_host`, same folder first), with the library's text from
+  the editor. `Expanded.strings` records each source string's path, parent and include line, and `problems_in`
+  maps errors to any file in that tree: its own lines, or the `#include` line for errors in files it includes.
 - glslang stops at the first undeclared identifier ("compilation terminated"): one at a time.
 - Annotators must be `DumbAware`. CLion briefly re-enters dumb mode about 1.5 s after a project opens; a
   non-DumbAware annotator is skipped then and its errors only appear after the next edit.
@@ -83,14 +86,13 @@ shipped unmodified as a separate process; glslang is BSD-3 and others.
 
 `./gradlew test`: plain JUnit 4 on pure functions, no headless IDE (fast, and independent of Nova starting up).
 The IDE-facing classes are thin wrappers; the logic they call is `internal` and text-in/result-out:
-`semantic_highlights`, `expand_includes`, `inject_defines`, `parse_defines`, `glslang_args`, `parse_glslang_output`,
-`problem_range`, `rename_scope`, `rename_ranges`, `fold_regions`, `outline`, `include_at`, plus the lexer. Four tests run the real bundled glslang end to end
-(OpenGL, Vulkan, defines, includes; skipped if it isn't built for the OS).
+`semantic_highlights`, `expand_includes`, `find_host`, `problems_in`, `inject_defines`, `parse_defines`, `glslang_args`,
+`problem_range`, `rename_scope`, `rename_ranges`, `fold_regions`, `outline`, `include_at`, plus the lexer. Five tests run the real bundled glslang end to end
+(OpenGL, Vulkan, defines, includes, library via host; skipped if it isn't built for the OS).
 **Put new logic in a pure function and test it there.**
 
 ## Known gaps / ideas
 
-- Check `.glsl` include files in the context of an including shader.
 - Breadcrumbs / sticky lines: need a nested PSI, which this plugin deliberately doesn't have.
 - GLSL injection into C++ raw strings.
 - Never tested on Windows or on CLion 2025.3. No macOS bundle (tools are found on PATH there).

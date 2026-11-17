@@ -68,8 +68,10 @@ File extensions: `.glsl .vert .frag .geom .comp .tesc .tese .mesh .task .rgen .r
 
 - **CLion Nova** sends the stock Go to Declaration to its C++ engine, which doesn't know GLSL. The plugin binds
   its own GLSL-only action to Ctrl+B / Ctrl+click, so you'll see two actions on Ctrl+B in the keymap; that's expected.
-- **Error checking** runs on files with a stage extension only. A bare `.glsl` is treated as an include library,
-  since it usually has no `#version` or `main()` and would only produce noise on its own.
+- **Error checking** compiles stage files (`.frag`, `.vert`, `.comp`, …) as themselves. A bare `.glsl` is treated
+  as an include library and checked through a shader in the project that includes it (preferring one in the same
+  folder); its errors show up in the library, marked "checked as part of <shader>". A library nothing includes
+  isn't checked.
   `#include "..."` / `<...>` is resolved relative to the file, then the project root, then the configured include folders.
 - glslang stops at the first undeclared identifier, so those show up one at a time.
 

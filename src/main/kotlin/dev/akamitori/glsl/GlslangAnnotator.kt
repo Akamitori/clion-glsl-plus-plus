@@ -13,6 +13,8 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiFile
+import com.intellij.psi.search.FileTypeIndex
+import com.intellij.psi.search.GlobalSearchScope
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
@@ -27,28 +29,51 @@ import java.nio.file.Path
  * string 0 is this file, anything else is reported on the #include line that pulled it in.
  * Defines are inserted as `#define` lines after #version, for the same reason (-D needs -l in plain mode).
  *
- * Only files with a stage extension are checked. A bare .glsl is usually an include library that
- * doesn't compile on its own (no #version, no main), so checking it would only produce noise.
+ * A file with a stage extension (.frag, .vert, ...) is compiled as itself. A file without one (.glsl)
+ * is usually an include library that doesn't compile on its own (no #version, no main), so it is
+ * checked through a shader that includes it (its "host"), keeping only errors that come from the
+ * library itself. No host in the project means no checking.
  */
 // glslang needs no index, so it must also run while CLion is indexing (dumb mode); without DumbAware
 // the daemon skips it then, and errors only appear after the next edit.
 class GlslangAnnotator : ExternalAnnotator<GlslangAnnotator.Input, List<Problem>>(), DumbAware {
 
-    class Input(val text: String, val dir: Path, val stage: String, val project_dir: Path?, val options: CheckOptions)
+    /**
+     * stage is null for an include library; host_candidates are then the project's stage files,
+     * one of which may include it.
+     */
+    class Input(
+        val text: String, val path: Path, val stage: String?, val project_dir: Path?,
+        val options: CheckOptions, val host_candidates: List<Path>,
+    )
 
     override fun collectInformation(file: PsiFile, editor: Editor, hasErrors: Boolean): Input? {
         val vfile = file.virtualFile ?: return null
-        val stage = STAGES[vfile.extension?.lowercase()] ?: return null
-        val dir = vfile.parent?.toNioPathOrNull() ?: return null
+        val path = vfile.toNioPathOrNull() ?: return null
+        val stage = STAGES[vfile.extension?.lowercase()]
         val project_dir = file.project.basePath?.let { Path.of(it) }
         val options = GlslProjectSettings.getInstance(file.project).check_options(project_dir)
-        return Input(editor.document.text, dir, stage, project_dir, options)
+        val candidates = if (stage != null) emptyList() else
+            FileTypeIndex.getFiles(GlslFileType, GlobalSearchScope.projectScope(file.project))
+                .filter { it != vfile && STAGES.containsKey(it.extension?.lowercase()) }
+                .mapNotNull { it.toNioPathOrNull() }
+        if (stage == null && candidates.isEmpty()) return null
+        return Input(editor.document.text, path, stage, project_dir, options, candidates)
     }
 
     override fun doAnnotate(input: Input): List<Problem> {
         val exe = find_glslang() ?: return emptyList()
         val search_dirs = listOfNotNull(input.project_dir) + input.options.include_dirs
-        val expanded = expand_includes(input.text, input.dir, search_dirs, ::current_text)
+        // This file's text comes from the editor snapshot, so unsaved edits are what gets checked.
+        val read = { p: Path -> if (p == input.path) input.text else current_text(p) }
+
+        // A stage file is compiled as itself; a library through a shader that includes it.
+        val host = if (input.stage != null) input.path else
+            find_host(input.path, input.host_candidates, search_dirs, read) ?: return emptyList()
+        val stage = input.stage ?: STAGES.getValue(host.fileName.toString().substringAfterLast('.').lowercase())
+        val target = if (host == input.path) null else input.path
+
+        val expanded = expand_includes(read(host), host.parent, search_dirs, main_path = host, read = read)
         val source = inject_defines(expanded.text, input.options.defines)
 
         // SPIR-V mode writes a .spv on success (into the working dir by default, i.e. next to the
@@ -56,14 +81,16 @@ class GlslangAnnotator : ExternalAnnotator<GlslangAnnotator.Input, List<Problem>
         val spv = Files.createTempFile("glsl-check-", ".spv")
         try {
             val cmd = GeneralCommandLine(exe.toString())
-                .withParameters(glslang_args(input.stage, input.options.target, spv))
-                .withWorkDirectory(input.dir.toFile())
+                .withParameters(glslang_args(stage, input.options.target, spv))
+                .withWorkDirectory(host.parent.toFile())
                 .withCharset(StandardCharsets.UTF_8)
             val handler = CapturingProcessHandler(cmd)
             handler.processInput.use { it.write(source.toByteArray(StandardCharsets.UTF_8)) }
             val out = handler.runProcess(5000)
             if (out.isTimeout) return emptyList()
-            return parse_glslang_output(out.stdout + "\n" + out.stderr, expanded.includes)
+            val problems = problems_in(out.stdout + "\n" + out.stderr, expanded, target)
+            return if (target == null) problems
+            else problems.map { it.copy(message = "${it.message} (checked as part of ${host.fileName})") }
         } finally {
             Files.deleteIfExists(spv)
         }
@@ -94,10 +121,13 @@ private fun com.intellij.openapi.vfs.VirtualFile.toNioPathOrNull(): Path? =
 /** line is 0-based in this file; token is the quoted name from the message, if any. */
 data class Problem(val line: Int, val message: String, val token: String?, val warning: Boolean)
 
-/** Where an included source string came from: the #include line in *this* file (0-based) and the header name. */
-data class IncludeSite(val line: Int, val name: String)
+/**
+ * One glslang source string: the main file (number 0, no parent) or an included file. parent is the
+ * string whose `#include` pulled it in, at line_in_parent (0-based); name is the header as written.
+ */
+data class SourceString(val path: Path?, val parent: Int?, val line_in_parent: Int, val name: String)
 
-class Expanded(val text: String, val includes: Map<Int, IncludeSite>)
+class Expanded(val text: String, val strings: Map<Int, SourceString>)
 
 /** Per-project checker options. target is "opengl" or a glslang --target-env like "vulkan1.3". */
 data class CheckOptions(
@@ -160,17 +190,21 @@ private val INCLUDE_EXT = Regex("^\\s*#\\s*extension\\s+GL_(GOOGLE_include_direc
 
 /**
  * Inlines #include files so glslang can run in plain OpenGL mode. Each included file gets its own
- * source-string number via `#line 1 N`, and `#line <next> <parent>` restores numbering afterwards,
- * so errors map back: string 0 is this file, others belong to the #include line in `includes`.
+ * source-string number via `#line 1 N`, and `#line <next> <parent>` restores numbering afterwards;
+ * `strings` records where each number came from, so errors can be mapped to any file (see [problems_in]).
  * Includes are looked up next to the including file, then in `search_dirs` in order.
  * Unresolvable or recursive includes are left as-is so glslang reports them on the right line.
+ * main_path, if known, is the main file's own path (for cycle detection and [find_host]).
  */
-internal fun expand_includes(text: String, dir: Path, search_dirs: List<Path>, read: (Path) -> String): Expanded {
-    val includes = HashMap<Int, IncludeSite>()
+internal fun expand_includes(
+    text: String, dir: Path, search_dirs: List<Path>, main_path: Path? = null, read: (Path) -> String,
+): Expanded {
+    val strings = HashMap<Int, SourceString>()
+    strings[0] = SourceString(main_path, null, -1, main_path?.fileName?.toString() ?: "")
     var next_string = 1
     val out = StringBuilder()
 
-    fun expand(text: String, dir: Path, string_no: Int, site: IncludeSite?, stack: Set<Path>) {
+    fun expand(text: String, dir: Path, string_no: Int, stack: Set<Path>) {
         text.lineSequence().forEachIndexed { i, line ->
             val m = INCLUDE.find(line)
             if (m == null) {
@@ -180,23 +214,34 @@ internal fun expand_includes(text: String, dir: Path, search_dirs: List<Path>, r
             }
             val name = m.groupValues[1]
             val path = resolve_include(name, dir, search_dirs)
-            val my_site = site ?: IncludeSite(i, name)  // nested includes report on the top-level #include
             if (path == null || path in stack || stack.size > 16) {
                 out.append(line).append('\n')
                 return@forEachIndexed
             }
             val inc_no = next_string++
-            includes[inc_no] = my_site
+            strings[inc_no] = SourceString(path, string_no, i, name)
             out.append("#line 1 ").append(inc_no).append('\n')
             // plusElement, not `+`: Path is Iterable<Path>, so `stack + path` would add its name components.
-            expand(read(path), path.parent, inc_no, my_site, stack.plusElement(path))
+            expand(read(path), path.parent, inc_no, stack.plusElement(path))
             out.append("#line ").append(i + 2).append(' ').append(string_no).append('\n')
         }
     }
 
-    expand(text, dir, 0, null, emptySet())
-    return Expanded(out.toString(), includes)
+    expand(text, dir, 0, listOfNotNull(main_path).toSet())
+    return Expanded(out.toString(), strings)
 }
+
+/**
+ * The first candidate shader whose include tree contains `target`, preferring candidates in
+ * target's own folder. Candidates are read with `read` (editor text if open).
+ */
+internal fun find_host(target: Path, candidates: List<Path>, search_dirs: List<Path>, read: (Path) -> String): Path? =
+    candidates
+        .sortedWith(compareBy<Path>({ it.parent != target.parent }, { it.toString() }))
+        .firstOrNull { c ->
+            val text = try { read(c) } catch (_: java.io.IOException) { return@firstOrNull false }
+            expand_includes(text, c.parent, search_dirs, main_path = c, read = read).strings.values.any { it.path == target }
+        }
 
 /** Relative to the including file first, then each search dir (project root, configured include folders). */
 internal fun resolve_include(name: String, dir: Path, search_dirs: List<Path>): Path? =
@@ -204,9 +249,15 @@ internal fun resolve_include(name: String, dir: Path, search_dirs: List<Path>): 
         .map { it.resolve(name).normalize() }
         .firstOrNull { Files.isRegularFile(it) }
 
-/** glslang's `ERROR: <string>:<line>: <message>` lines -> problems in this file. */
-internal fun parse_glslang_output(output: String, includes: Map<Int, IncludeSite>): List<Problem> =
-    output.lineSequence()
+/**
+ * glslang's `ERROR: <string>:<line>: <message>` lines -> problems in one file: the main file when
+ * `target` is null, else every source string with that path. An error in a file the target includes
+ * (directly or not) is reported on the target's #include line for it; errors elsewhere are dropped.
+ */
+internal fun problems_in(output: String, expanded: Expanded, target: Path?): List<Problem> {
+    val strings = expanded.strings
+    val target_ids = if (target == null) setOf(0) else strings.filterValues { it.path == target }.keys
+    return output.lineSequence()
         .mapNotNull { DIAG.matchEntire(it.trim()) }
         .mapNotNull { m ->
             val (kind, string_no, line_no, msg) = m.destructured
@@ -215,14 +266,23 @@ internal fun parse_glslang_output(output: String, includes: Map<Int, IncludeSite
             val token = QUOTED.find(message)?.groupValues?.get(1)?.takeIf { it.isNotBlank() }
             val warning = kind == "WARNING"
             val string = string_no.toIntOrNull() ?: 0
-            if (string == 0) {
-                Problem(line_no.toInt() - 1, message, token, warning)
-            } else {
-                val inc = includes[string] ?: return@mapNotNull null
-                Problem(inc.line, "In ${inc.name}:${line_no}: $message", null, warning)
-            }
+            if (string in target_ids) return@mapNotNull Problem(line_no.toInt() - 1, message, token, warning)
+            val include_line = include_line_in(strings, string, target_ids) ?: return@mapNotNull null
+            Problem(include_line, "In ${strings[string]?.name}:$line_no: $message", null, warning)
         }
         .toList()
+}
+
+/** Walking up from `string`, the line of the #include in a target string that (indirectly) pulled it in. */
+private fun include_line_in(strings: Map<Int, SourceString>, string: Int, target_ids: Set<Int>): Int? {
+    var child = string
+    while (true) {
+        val info = strings[child] ?: return null
+        val parent = info.parent ?: return null
+        if (parent in target_ids) return info.line_in_parent
+        child = parent
+    }
+}
 
 /** The quoted token on that line if we can find it, else the line without leading/trailing blanks. */
 internal fun problem_range(text: CharSequence, p: Problem): TextRange? {
