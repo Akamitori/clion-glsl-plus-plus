@@ -22,17 +22,21 @@
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.lsp</depends>
 
+    <!-- Other GLSL plugins claim the same file extensions (and glsl4idea the language ID "GLSL"). -->
+    <incompatible-with>GLSL</incompatible-with>
+    <incompatible-with>OpenGL-Plugin</incompatible-with>
+
     <extensions defaultExtensionNs="com.intellij">
         <fileType name="GLSL"
-                  language="GLSL"
+                  language="dev.akamitori.glsl"
                   implementationClass="dev.akamitori.glsl.GlslFileType"
                   fieldName="INSTANCE"
                   extensions="glsl;vert;frag;geom;comp;tesc;tese;mesh;task;rgen;rint;rahit;rchit;rmiss;rcall;vsh;fsh"/>
 
-        <lang.parserDefinition language="GLSL" implementationClass="dev.akamitori.glsl.GlslParserDefinition"/>
-        <lang.syntaxHighlighterFactory language="GLSL" implementationClass="dev.akamitori.glsl.GlslSyntaxHighlighterFactory"/>
-        <lang.commenter language="GLSL" implementationClass="dev.akamitori.glsl.GlslCommenter"/>
-        <lang.braceMatcher language="GLSL" implementationClass="dev.akamitori.glsl.GlslBraceMatcher"/>
+        <lang.parserDefinition language="dev.akamitori.glsl" implementationClass="dev.akamitori.glsl.GlslParserDefinition"/>
+        <lang.syntaxHighlighterFactory language="dev.akamitori.glsl" implementationClass="dev.akamitori.glsl.GlslSyntaxHighlighterFactory"/>
+        <lang.commenter language="dev.akamitori.glsl" implementationClass="dev.akamitori.glsl.GlslCommenter"/>
+        <lang.braceMatcher language="dev.akamitori.glsl" implementationClass="dev.akamitori.glsl.GlslBraceMatcher"/>
         <colorSettingsPage implementation="dev.akamitori.glsl.GlslColorSettingsPage"/>
         <!-- Our own defaults for the bundled schemes; each is set explicitly since palettes differ per theme. -->
         <additionalTextAttributes scheme="Darcula" file="colorSchemes/GlslDarcula.xml"/>
@@ -52,14 +56,14 @@
         <platform.lsp.integrationProvider implementation="dev.akamitori.glsl.GlslLspIntegrationProvider"/>
 
         <!-- Context-aware identifier colours (functions, params, globals, structs, fields, macros). -->
-        <annotator language="GLSL" implementationClass="dev.akamitori.glsl.GlslSemanticAnnotator"/>
+        <annotator language="dev.akamitori.glsl" implementationClass="dev.akamitori.glsl.GlslSemanticAnnotator"/>
 
-        <lang.foldingBuilder language="GLSL" implementationClass="dev.akamitori.glsl.GlslFoldingBuilder"/>
-        <lang.psiStructureViewFactory language="GLSL" implementationClass="dev.akamitori.glsl.GlslStructureViewFactory"/>
+        <lang.foldingBuilder language="dev.akamitori.glsl" implementationClass="dev.akamitori.glsl.GlslFoldingBuilder"/>
+        <lang.psiStructureViewFactory language="dev.akamitori.glsl" implementationClass="dev.akamitori.glsl.GlslStructureViewFactory"/>
         <breadcrumbsInfoProvider implementation="dev.akamitori.glsl.GlslBreadcrumbsProvider"/>
 
         <!-- glsl_analyzer sends no diagnostics; glslang provides them. -->
-        <externalAnnotator language="GLSL" implementationClass="dev.akamitori.glsl.GlslangAnnotator"/>
+        <externalAnnotator language="dev.akamitori.glsl" implementationClass="dev.akamitori.glsl.GlslangAnnotator"/>
 
         <!-- Our Ctrl+B / Ctrl+click / Shift+F6 / Alt+F7 / Ctrl+Alt+L actions win over the stock ones in GLSL editors. -->
         <actionPromoter implementation="dev.akamitori.glsl.GlslActionPromoter"/>

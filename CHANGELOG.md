@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Fixed: the plugin broke when glsl4idea ("GLSL Support") was installed.** Both used the language ID `GLSL`, so
+  our file type failed with `ImplementationConflictException` (found in the Windows test). Our language ID is now
+  `dev.akamitori.glsl` (still shown as "GLSL"), and glsl4idea (`GLSL`) and rmordechay's GLSL (`OpenGL-Plugin`), which
+  claim the same extensions, are declared `incompatible-with`.
+
 - **Requires CLion 2026.2 or newer** (was 2025.3). Moved to the LspIntegrationProvider / LspClient API introduced
   in 2026.2; no deprecated, experimental or scheduled-for-removal API left. `verifyPlugin` passes on 2026.2 and 2026.3.
 - Bundled-tool and PATH lookup no longer use internal or deprecated platform helpers.
