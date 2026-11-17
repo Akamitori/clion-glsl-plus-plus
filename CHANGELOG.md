@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.1 (2026-11-18)
+
+Marketplace preparation.
+
+- Renamed to **GLSL++** in the plugin list and store ("GLSL" is taken there). File types, settings and colours are
+  still labelled GLSL; the plugin ID (`dev.akamitori.glsl`) is unchanged, so it updates 1.0.0 in place.
+- **MIT license** for the plugin (`LICENSE`, also shipped in `licenses/`). The description links the bundled tools'
+  sources and licenses, and says how to use the plugin on macOS.
+- Store icon (`pluginIcon.svg`).
+- Removed the Ctrl+hover underline: it needed internal platform API (`CtrlMouseAction`), which the Marketplace
+  flags and which can break in any CLion update. Ctrl+click and Ctrl+B still go to the declaration.
+  `verifyPlugin` now fails on internal API too, and reports none.
+
 ## 1.0.0 (2026-11-18)
 
 Tested on Linux x64 and Windows x64 (`docs/windows-test-results.md`).

@@ -1,7 +1,5 @@
 package dev.akamitori.glsl
 
-import com.intellij.codeInsight.navigation.CtrlMouseAction
-import com.intellij.codeInsight.navigation.CtrlMouseData
 import com.intellij.openapi.actionSystem.ActionPromoter
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
@@ -19,8 +17,6 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.lsp.api.LspClient
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.psi.PsiFile
-import com.intellij.psi.tree.TokenSet
 import com.intellij.platform.lsp.api.LspClientManager
 import com.intellij.ui.awt.RelativePoint
 import org.eclipse.lsp4j.DefinitionParams
@@ -38,26 +34,8 @@ import javax.swing.SwingUtilities
  * declaration to go to"). So this action asks glsl_analyzer directly with textDocument/definition and
  * opens the result itself. No platform navigation code is involved, so there is nothing to reroute.
  */
-class GlslGotoDeclarationAction : AnAction(), DumbAware, CtrlMouseAction, GlslEditorAction {
+class GlslGotoDeclarationAction : AnAction(), DumbAware, GlslEditorAction {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
-
-    /**
-     * Ctrl+hover underline. Called off the EDT as the mouse moves; underline the token only when
-     * glsl_analyzer actually has a definition for it, so built-ins like vec4 stay plain.
-     */
-    override fun getCtrlMouseData(editor: Editor, file: PsiFile, offset: Int): CtrlMouseData? {
-        if (file !is GlslFile) return null
-        include_at(editor.document.immutableCharSequence, offset)?.let { (name, range) ->
-            return if (resolve_include_for(file.project, file.virtualFile, name) != null) CtrlMouseData(listOf(range), true, null, null) else null
-        }
-        val token = file.findElementAt(offset) ?: return null
-        if (token.node.elementType !in NAVIGABLE_TOKENS) return null
-        val vfile = file.virtualFile ?: return null
-        val server = glsl_server(file.project) ?: return null
-        val targets = request_definition(server, vfile, lsp_position(editor, offset), timeout_ms = 500)
-        if (targets.isEmpty()) return null
-        return CtrlMouseData(listOf(token.textRange), true, null, null)
-    }
 
     override fun update(e: AnActionEvent) {
         e.presentation.isEnabledAndVisible =
@@ -134,9 +112,6 @@ class GlslActionPromoter : ActionPromoter {
     override fun promote(actions: List<AnAction>, context: DataContext): List<AnAction> =
         actions.filter { it is GlslEditorAction }
 }
-
-/** Tokens worth asking the server about; keywords, numbers, punctuation never have a definition. */
-internal val NAVIGABLE_TOKENS = TokenSet.create(GlslTokens.IDENT, GlslTokens.BUILTIN_FUNC, GlslTokens.BUILTIN_VAR, GlslTokens.TYPE)
 
 internal fun glsl_server(project: Project): LspClient? =
     LspClientManager.getInstance(project)

@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "dev.akamitori"
-version = "1.0.0"
+version = "1.0.1"
 
 repositories {
     mavenCentral()
@@ -46,10 +46,9 @@ intellijPlatform {
     // ./gradlew verifyPlugin: checks the built plugin for API problems against the oldest supported CLion
     // (sinceBuild 262) and, if present, the locally installed one.
     pluginVerification {
-        // Fail on everything except internal API: the Ctrl+hover underline needs CtrlMouseAction/CtrlMouseData,
-        // which have no public equivalent. Anything new (compat problems, deprecated, experimental) still fails.
-        failureLevel = org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel.ALL -
-            org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel.INTERNAL_API_USAGES
+        // Fail on everything: compatibility problems and internal, deprecated or experimental API
+        // (the Marketplace flags internal API, and it can break in any CLion update).
+        failureLevel = org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel.ALL
         ides {
             create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.CLion, "2026.2")
             providers.gradleProperty("localClionPath").orNull?.takeIf { file(it).isDirectory }?.let { local(file(it)) }
@@ -136,6 +135,11 @@ val bundleTools = tasks.register<Sync>("bundleTools") {
                 eachFile { path = "$target_dir/$name" }
             }
         }
+    }
+    // The plugin's own license (MIT), next to the tools' licenses.
+    from("LICENSE") {
+        into("licenses")
+        rename { "clion-glsl-LICENSE.txt" }
     }
 }
 

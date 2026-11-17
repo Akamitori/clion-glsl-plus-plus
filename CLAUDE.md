@@ -11,7 +11,7 @@ better-glsl) are subpar or unmaintained. Targets CLion 2026.2+ (sinceBuild 262),
 | PSI | flat: one file node over all lexer tokens, **no grammar** | `GlslParserDefinition.kt`, `GlslLanguage.kt` |
 | Semantic colours (functions, params, globals, structs, fields, swizzles, macros, layout qualifiers) | heuristic token scan, an `Annotator` | `GlslSemanticAnnotator.kt` |
 | Hover, completion | glsl_analyzer over the IntelliJ LSP API (stdio) | `GlslLsp.kt` |
-| Go to declaration, Ctrl+hover underline | glsl_analyzer `textDocument/definition`, called **directly** by our action | `GlslNavigation.kt` |
+| Go to declaration | glsl_analyzer `textDocument/definition`, called **directly** by our action | `GlslNavigation.kt` |
 | Reformat | glsl_analyzer `textDocument/formatting`, called directly | `GlslFormat.kt` |
 | Rename | our own token-level rename; glsl_analyzer only locates the declaration | `GlslRename.kt` |
 | Diagnostics | glslang (`glslangValidator`) as an `ExternalAnnotator` | `GlslangAnnotator.kt` |
@@ -83,8 +83,9 @@ shipped unmodified as a separate process; glslang is BSD-3 and others.
   IntelliJ Platform Gradle Plugin 2.20.1, Gradle 9.9.1 wrapper, JDK 21 toolchain via foojay (auto-downloaded).
 - `localClionPath` in **`~/.gradle/gradle.properties`** (per machine, never committed) builds against an installed CLion (ignored if the dir doesn't exist, then
   `clion("2026.2")` is downloaded). Compiling against 2026.3 won't catch APIs missing in 2026.2, so run
-  **`./gradlew verifyPlugin`** (CLion 2026.2 + local). It fails on everything except internal API, which we use on
-  purpose for the Ctrl+hover underline (`CtrlMouseAction`/`CtrlMouseData`, no public equivalent).
+  **`./gradlew verifyPlugin`** (CLion 2026.2 + local). It fails on everything, internal API included. The Ctrl+hover
+  underline was dropped in 1.0.1 for that reason: it needs `CtrlMouseAction`/`CtrlMouseData` (internal, no public
+  equivalent). Ctrl+click itself is a plain mouse shortcut on our action and doesn't need it.
 - LSP API: the 2026.2+ names (`LspIntegrationProvider`, `ProjectWideLspClientDescriptor`, `LspClient`,
   `LspClientManager`, EP `platform.lsp.integrationProvider`). The pre-2026.2 `LspServer*` names are deprecated.
 - Avoid platform helpers that are deprecated/experimental/internal in 2026.x: plugin dir comes from

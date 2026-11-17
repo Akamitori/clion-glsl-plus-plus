@@ -3,7 +3,7 @@
 GLSL support for CLion:
 
 - **Navigation and hover docs** come from the [glsl_analyzer](https://github.com/nolanderc/glsl_analyzer) language server
-  (Ctrl+B / Ctrl+click, Ctrl+hover underline, completion, formatting, `#include` awareness).
+  (Ctrl+B / Ctrl+click, completion, formatting, `#include` awareness).
 - **Error checking** (undeclared identifiers, type errors, syntax errors) comes from
   [glslang](https://github.com/KhronosGroup/glslang), the Khronos reference compiler.
 - **Highlighting** comes from a built-in lexer (instant) plus a semantic pass that colors your own functions,
@@ -85,5 +85,5 @@ File extensions: `.glsl .vert .frag .geom .comp .tesc .tese .mesh .task .rgen .r
 
 ## Licenses
 
-The plugin bundles unmodified releases of glsl_analyzer (GPL-3.0) and glslang (BSD-3-Clause and others),
+The plugin itself is MIT-licensed (`LICENSE`). It bundles unmodified releases of glsl_analyzer (GPL-3.0) and glslang (BSD-3-Clause and others),
 which run as separate processes. Their license texts are in the plugin's `licenses/` folder.

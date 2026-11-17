@@ -1,11 +1,12 @@
 <idea-plugin>
     <id>dev.akamitori.glsl</id>
-    <name>GLSL</name>
+    <name>GLSL++</name>
     <vendor>Akamitori</vendor>
     <description><![CDATA[
-    <p>GLSL support for CLion, including CLion Nova.</p>
+    <p>GLSL shader support for CLion, including CLion Nova: navigation, real compiler errors as you type,
+       rename, formatting and semantic highlighting.</p>
     <ul>
-      <li><b>Navigation and docs</b>: Go to Declaration (Ctrl+B / Ctrl+click), Ctrl+hover underline, hover docs,
+      <li><b>Navigation and docs</b>: Go to Declaration (Ctrl+B / Ctrl+click), hover docs,
           completion and Reformat Code, via the
           <a href="https://github.com/nolanderc/glsl_analyzer">glsl_analyzer</a> language server.</li>
       <li><b>Error checking</b>: undeclared identifiers, type and syntax errors as you type, via
@@ -16,7 +17,12 @@
           structs, fields, swizzles, macros and layout qualifiers, with built-in functions in their own colour.</li>
     </ul>
     <p>glsl_analyzer and glslang are bundled for Linux x64 and Windows x64, so nothing else needs installing there.
-       On other platforms they are picked up from <code>PATH</code>.</p>
+       On macOS (not bundled) install them and they are picked up from <code>PATH</code>, or set their paths in
+       Settings | Languages &amp; Frameworks | GLSL.</p>
+    <p>The plugin is MIT-licensed. It ships unmodified releases of glsl_analyzer
+       (<a href="https://github.com/nolanderc/glsl_analyzer/tree/v1.7.1">GPL-3.0, source</a>) and glslang
+       (<a href="https://github.com/KhronosGroup/glslang/tree/16.6.0">BSD-3-Clause and others, source</a>), which run as
+       separate programs; their license texts are in the plugin's <code>licenses</code> folder.</p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
