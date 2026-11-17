@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 (2026-11-18)
+
+Tested on Linux x64 and Windows x64 (`docs/windows-test-results.md`).
 
 - **Fixed: the plugin broke when glsl4idea ("GLSL Support") was installed.** Both used the language ID `GLSL`, so
   our file type failed with `ImplementationConflictException` (found in the Windows test). Our language ID is now
@@ -10,7 +12,6 @@
   file type named `GLSL` the same way.
 - **New: a warning when some shader extensions open with another file type** (another GLSL plugin, or a mapping in
   Settings | Editor | File Types), listing which extensions and the owner. Checked once per IDE session at project open.
-
 - **Requires CLion 2026.2 or newer** (was 2025.3). Moved to the LspIntegrationProvider / LspClient API introduced
   in 2026.2; no deprecated, experimental or scheduled-for-removal API left. `verifyPlugin` passes on 2026.2 and 2026.3.
 - Bundled-tool and PATH lookup no longer use internal or deprecated platform helpers.
