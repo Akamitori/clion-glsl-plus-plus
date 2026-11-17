@@ -1,7 +1,7 @@
 # clion-glsl: GLSL plugin for CLion
 
 A CLion plugin that properly understands GLSL. Existing marketplace plugins (glsl4idea, "GLSL" by rmordechay,
-better-glsl) are subpar or unmaintained. Targets CLion 2025.3+ (sinceBuild 253), developed against CLion 2026.3 Nova.
+better-glsl) are subpar or unmaintained. Targets CLion 2026.2+ (sinceBuild 262), developed against CLion 2026.3 Nova.
 
 ## Architecture
 
@@ -75,10 +75,18 @@ shipped unmodified as a separate process; glslang is BSD-3 and others.
 
 ## Build
 
-- Kotlin **2.4.21** (needed to read CLion 2026.3's metadata), `apiVersion = 2.2` so it still runs on 2025.3's stdlib.
+- Kotlin **2.4.21** (needed to read CLion 2026.3's metadata), `apiVersion = 2.3` so it still runs on 2026.2's stdlib.
   IntelliJ Platform Gradle Plugin 2.20.1, Gradle 9.9.1 wrapper, JDK 21 toolchain via foojay (auto-downloaded).
 - `localClionPath` in `gradle.properties` builds against an installed CLion (ignored if the dir doesn't exist, then
-  `clion("2025.3")` is downloaded). Compiling against 2026.3 won't catch APIs missing in 2025.3; run `verifyPlugin`.
+  `clion("2026.2")` is downloaded). Compiling against 2026.3 won't catch APIs missing in 2026.2, so run
+  **`./gradlew verifyPlugin`** (CLion 2026.2 + local). It fails on everything except internal API, which we use on
+  purpose for the Ctrl+hover underline (`CtrlMouseAction`/`CtrlMouseData`, no public equivalent).
+- LSP API: the 2026.2+ names (`LspIntegrationProvider`, `ProjectWideLspClientDescriptor`, `LspClient`,
+  `LspClientManager`, EP `platform.lsp.integrationProvider`). The pre-2026.2 `LspServer*` names are deprecated.
+- Avoid platform helpers that are deprecated/experimental/internal in 2026.x: plugin dir comes from
+  `PathManager.getJarPathForClass` (both `PluginManagerCore.getPlugin` and `PluginManager.getPluginByClass` are
+  internal), PATH lookup is a plain `System.getenv("PATH")` scan (`findInPath`, `findFirst`,
+  `findExecutableInPathOnAnyOS` are all deprecated or experimental).
 - `./gradlew buildPlugin` -> `build/distributions/*.zip` (about 7 MB with the tools). `./gradlew runIde` for a sandbox.
 - Config cache is on: lambdas in the build script must not capture script objects (copy to local vals).
 
@@ -95,7 +103,7 @@ The IDE-facing classes are thin wrappers; the logic they call is `internal` and 
 
 - Breadcrumbs / sticky lines: need a nested PSI, which this plugin deliberately doesn't have.
 - GLSL injection into C++ raw strings.
-- Never tested on Windows or on CLion 2025.3. No macOS bundle (tools are found on PATH there).
+- Never tested on Windows. No macOS bundle (tools are found on PATH there).
 - Rename: a local that shadows a global in another function is renamed with the global.
 
 ## Style

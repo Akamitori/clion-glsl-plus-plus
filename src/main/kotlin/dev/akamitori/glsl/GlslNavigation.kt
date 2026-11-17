@@ -16,12 +16,12 @@ import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.platform.lsp.api.LspServer
+import com.intellij.platform.lsp.api.LspClient
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiFile
 import com.intellij.psi.tree.TokenSet
-import com.intellij.platform.lsp.api.LspServerManager
+import com.intellij.platform.lsp.api.LspClientManager
 import com.intellij.ui.awt.RelativePoint
 import org.eclipse.lsp4j.DefinitionParams
 import org.eclipse.lsp4j.Location
@@ -79,7 +79,7 @@ class GlslGotoDeclarationAction : AnAction(), DumbAware, CtrlMouseAction, GlslEd
         }
 
         val server = glsl_server(project) ?: return
-        val position = ReadAction.compute<Position, Throwable> { lsp_position(editor, offset) }
+        val position = ReadAction.computeBlocking<Position, Throwable> { lsp_position(editor, offset) }
 
         ApplicationManager.getApplication().executeOnPooledThread {
             val targets = request_definition(server, file, position)
@@ -138,9 +138,9 @@ class GlslActionPromoter : ActionPromoter {
 /** Tokens worth asking the server about; keywords, numbers, punctuation never have a definition. */
 internal val NAVIGABLE_TOKENS = TokenSet.create(GlslTokens.IDENT, GlslTokens.BUILTIN_FUNC, GlslTokens.BUILTIN_VAR, GlslTokens.TYPE)
 
-internal fun glsl_server(project: Project): LspServer? =
-    LspServerManager.getInstance(project)
-        .getServersForProvider(GlslLspServerSupportProvider::class.java)
+internal fun glsl_server(project: Project): LspClient? =
+    LspClientManager.getInstance(project)
+        .getClients(GlslLspIntegrationProvider::class.java)
         .firstOrNull()
 
 private fun mouse_offset(editor: Editor, e: MouseEvent): Int {
@@ -157,7 +157,7 @@ internal fun lsp_position(editor: Editor, offset: Int): Position {
 
 /** Returns (uri, range) pairs; handles both Location[] and LocationLink[] responses. */
 internal fun request_definition(
-    server: LspServer,
+    server: LspClient,
     file: VirtualFile,
     position: Position,
     timeout_ms: Int = 5000,
@@ -171,7 +171,7 @@ internal fun request_definition(
     }
 }
 
-private fun navigate(project: Project, server: LspServer, target: Pair<String, Range>) {
+private fun navigate(project: Project, server: LspClient, target: Pair<String, Range>) {
     val (uri, range) = target
     val file = server.descriptor.findFileByUri(uri) ?: return
     OpenFileDescriptor(project, file, range.start.line, range.start.character).navigate(true)

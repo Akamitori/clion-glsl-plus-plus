@@ -92,7 +92,7 @@ internal fun find_symbol_occurrences(
     val plan = ProgressManager.getInstance().runProcessWithProgressSynchronously<Map<VirtualFile, List<TextRange>>?, Exception>(
         {
             val def = server?.let { request_definition(it, file, position).firstOrNull() }
-            ReadAction.compute<Map<VirtualFile, List<TextRange>>?, Exception> {
+            ReadAction.computeBlocking<Map<VirtualFile, List<TextRange>>?, Exception> {
                 val def_file = def?.let { server.descriptor.findFileByUri(it.first) }
                 val def_doc = def_file?.let { FileDocumentManager.getInstance().getDocument(it) }
                 if (def_file != null && def_doc != null) {

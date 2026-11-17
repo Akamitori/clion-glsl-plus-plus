@@ -23,7 +23,7 @@ dependencies {
         // Set localClionPath in gradle.properties to use an installed CLion instead of downloading one.
         // Ignored if the path doesn't exist, so the same gradle.properties works on other machines.
         val local_clion = providers.gradleProperty("localClionPath").orNull?.takeIf { file(it).isDirectory }
-        if (local_clion != null) local(local_clion) else clion("2025.3")
+        if (local_clion != null) local(local_clion) else clion("2026.2")
         // Puts the IDE jars on the test classpath. The tests are plain JUnit on pure functions,
         // no headless IDE, so they're fast and don't depend on CLion Nova starting up.
         testFramework(TestFrameworkType.Platform)
@@ -35,17 +35,29 @@ dependencies {
 kotlin {
     jvmToolchain(21)
     compilerOptions {
-        // Kotlin 2.4 is needed to read CLion 2026.3's class metadata, but the plugin runs
-        // against the IDE's bundled stdlib, so stay within what 2025.3 (sinceBuild) ships.
-        apiVersion = org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_2
+        // Kotlin 2.4 is needed to read CLion 2026.3's class metadata, but the plugin runs against
+        // the IDE's bundled stdlib, so stay within what the oldest supported CLion (2026.2) ships.
+        apiVersion = org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_3
     }
 }
 
 intellijPlatform {
     buildSearchableOptions = false
+    // ./gradlew verifyPlugin: checks the built plugin for API problems against the oldest supported CLion
+    // (sinceBuild 262) and, if present, the locally installed one.
+    pluginVerification {
+        // Fail on everything except internal API: the Ctrl+hover underline needs CtrlMouseAction/CtrlMouseData,
+        // which have no public equivalent. Anything new (compat problems, deprecated, experimental) still fails.
+        failureLevel = org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel.ALL -
+            org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel.INTERNAL_API_USAGES
+        ides {
+            create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.CLion, "2026.2")
+            providers.gradleProperty("localClionPath").orNull?.takeIf { file(it).isDirectory }?.let { local(file(it)) }
+        }
+    }
     pluginConfiguration {
         ideaVersion {
-            sinceBuild = "253"
+            sinceBuild = "262"  // CLion 2026.2: first with the LspIntegrationProvider / LspClient API
             untilBuild = provider { null }  // open-ended: works on 2026.x too
         }
     }

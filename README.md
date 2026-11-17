@@ -11,7 +11,7 @@ GLSL support for CLion:
 
 Both tools are **bundled** for Linux x64 and Windows x64, so there is nothing else to install there.
 
-Requires CLion 2025.3 or newer.
+Requires CLion 2026.2 or newer.
 
 ## Install on a new machine
 
@@ -39,7 +39,8 @@ and the tool archives are checked against pinned SHA-256 hashes.
 ```
 
 The build compiles against a locally installed CLion if `localClionPath` in `gradle.properties` points at one,
-and otherwise downloads CLion 2025.3 once (several GB, cached in `~/.gradle`).
+and otherwise downloads CLion 2026.2 once (several GB, cached in `~/.gradle`).
+`./gradlew verifyPlugin` checks the built plugin against CLion 2026.2 and the local CLion.
 
 To bump a bundled tool, change its URL and SHA-256 in `bundled_files` in `build.gradle.kts`.
 

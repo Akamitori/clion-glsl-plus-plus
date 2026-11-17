@@ -49,7 +49,7 @@
 
         <notificationGroup id="GLSL" displayType="BALLOON"/>
 
-        <platform.lsp.serverSupportProvider implementation="dev.akamitori.glsl.GlslLspServerSupportProvider"/>
+        <platform.lsp.integrationProvider implementation="dev.akamitori.glsl.GlslLspIntegrationProvider"/>
 
         <!-- Context-aware identifier colours (functions, params, globals, structs, fields, macros). -->
         <annotator language="GLSL" implementationClass="dev.akamitori.glsl.GlslSemanticAnnotator"/>

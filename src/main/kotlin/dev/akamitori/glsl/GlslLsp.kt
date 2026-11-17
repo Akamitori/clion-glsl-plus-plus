@@ -1,20 +1,18 @@
 package dev.akamitori.glsl
 
 import com.intellij.execution.configurations.GeneralCommandLine
-import com.intellij.ide.plugins.PluginManagerCore
-import com.intellij.execution.configurations.PathEnvironmentVariableUtil
+import com.intellij.openapi.application.PathManager
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
-import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.platform.lsp.api.LspServer
-import com.intellij.platform.lsp.api.LspServerSupportProvider
-import com.intellij.platform.lsp.api.ProjectWideLspServerDescriptor
-import com.intellij.platform.lsp.api.lsWidget.LspServerWidgetItem
+import com.intellij.platform.lsp.api.LspClient
+import com.intellij.platform.lsp.api.LspIntegrationProvider
+import com.intellij.platform.lsp.api.ProjectWideLspClientDescriptor
+import com.intellij.platform.lsp.api.lsWidget.LspClientWidgetItem
 import com.intellij.util.system.CpuArch
 import java.nio.file.Files
 import java.nio.file.Path
@@ -38,7 +36,7 @@ private fun find_executable(configured: String, vararg names: String): Path? {
     }
     for (name in names) bundled_executable(name)?.let { return it }
     for (name in names) {
-        PathEnvironmentVariableUtil.findExecutableInPathOnAnyOS(exe_name(name))?.let { return it.toPath() }
+        find_on_path(exe_name(name))?.let { return it }
     }
     if (SystemInfo.isWindows) return null
     val home = System.getProperty("user.home")
@@ -47,6 +45,13 @@ private fun find_executable(configured: String, vararg names: String): Path? {
         .flatMap { name -> dirs.asSequence().map { Path.of(it, name) } }
         .firstOrNull { Files.isExecutable(it) }
 }
+
+/** Plain PATH search: the platform's helpers for this are all deprecated or experimental right now. */
+private fun find_on_path(file_name: String): Path? =
+    System.getenv("PATH").orEmpty().split(java.io.File.pathSeparatorChar)
+        .filter { it.isNotBlank() }
+        .map { Path.of(it.trim('"'), file_name) }
+        .firstOrNull { Files.isRegularFile(it) && Files.isExecutable(it) }
 
 private fun exe_name(name: String) = if (SystemInfo.isWindows) "$name.exe" else name
 
@@ -58,7 +63,9 @@ private fun bundled_executable(name: String): Path? {
         SystemInfo.isWindows -> "windows-x64"
         else -> return null
     }
-    val plugin_dir = PluginManagerCore.getPlugin(PluginId.getId(PLUGIN_ID))?.pluginPath ?: return null
+    // Our jar is <plugin dir>/lib/clion-glsl-<version>.jar. (The plugin-descriptor lookups are internal API.)
+    val jar = PathManager.getJarPathForClass(GlslLanguage::class.java)?.let { Path.of(it) } ?: return null
+    val plugin_dir = jar.parent?.parent ?: return null
     val exe = plugin_dir.resolve("bin").resolve(platform).resolve(exe_name(name))
     if (!Files.isRegularFile(exe)) return null
     // Plugin installation doesn't reliably keep the executable bit from the zip.
@@ -66,13 +73,11 @@ private fun bundled_executable(name: String): Path? {
     return exe.takeIf { Files.isExecutable(it) }
 }
 
-private const val PLUGIN_ID = "dev.akamitori.glsl"
-
-class GlslLspServerSupportProvider : LspServerSupportProvider {
+class GlslLspIntegrationProvider : LspIntegrationProvider {
     override fun fileOpened(
         project: Project,
         file: VirtualFile,
-        serverStarter: LspServerSupportProvider.LspServerStarter,
+        clientStarter: LspIntegrationProvider.LspClientStarter,
     ) {
         if (file.fileType != GlslFileType) return
         val exe = find_glsl_analyzer()
@@ -80,11 +85,11 @@ class GlslLspServerSupportProvider : LspServerSupportProvider {
             warn_missing_once(project)
             return
         }
-        serverStarter.ensureServerStarted(GlslLspServerDescriptor(project, exe))
+        clientStarter.ensureClientStarted(GlslLspClientDescriptor(project, exe))
     }
 
-    override fun createLspServerWidgetItem(lspServer: LspServer, currentFile: VirtualFile?) =
-        LspServerWidgetItem(lspServer, currentFile, GlslIcons.FILE, GlslConfigurable::class.java)
+    override fun createWidgetItem(lspClient: LspClient, currentFile: VirtualFile?) =
+        LspClientWidgetItem(lspClient, currentFile, GlslIcons.FILE, GlslConfigurable::class.java)
 
     private fun warn_missing_once(project: Project) {
         if (!warned.compareAndSet(false, true)) return
@@ -111,8 +116,8 @@ class GlslLspServerSupportProvider : LspServerSupportProvider {
     }
 }
 
-class GlslLspServerDescriptor(project: Project, private val exe: Path) :
-    ProjectWideLspServerDescriptor(project, "GLSL") {
+class GlslLspClientDescriptor(project: Project, private val exe: Path) :
+    ProjectWideLspClientDescriptor(project, "GLSL") {
 
     override fun isSupportedFile(file: VirtualFile) = file.fileType == GlslFileType
 

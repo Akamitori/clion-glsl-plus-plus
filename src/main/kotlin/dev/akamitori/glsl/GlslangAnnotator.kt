@@ -108,8 +108,8 @@ class GlslangAnnotator : ExternalAnnotator<GlslangAnnotator.Input, List<Problem>
     /** The editor's in-memory text if the file is open (unsaved edits, e.g. right after a rename), else disk. */
     private fun current_text(path: Path): String {
         val vf = LocalFileSystem.getInstance().findFileByNioFile(path)
-        val doc = vf?.let { ReadAction.compute<Document?, Throwable> { FileDocumentManager.getInstance().getCachedDocument(it) } }
-        return doc?.let { ReadAction.compute<String, Throwable> { it.text } } ?: Files.readString(path)
+        val doc = vf?.let { ReadAction.computeBlocking<Document?, Throwable> { FileDocumentManager.getInstance().getCachedDocument(it) } }
+        return doc?.let { ReadAction.computeBlocking<String, Throwable> { it.text } } ?: Files.readString(path)
     }
 }
 

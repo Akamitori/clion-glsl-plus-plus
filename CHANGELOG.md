@@ -1,8 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Requires CLion 2026.2 or newer** (was 2025.3). Moved to the LspIntegrationProvider / LspClient API introduced
+  in 2026.2; no deprecated, experimental or scheduled-for-removal API left. `verifyPlugin` passes on 2026.2 and 2026.3.
+- Bundled-tool and PATH lookup no longer use internal or deprecated platform helpers.
+
 ## 0.9.0
 
-First feature-complete version. Pending before 1.0.0: verification on CLion 2025.3 and on Windows.
+First feature-complete version. Pending before 1.0.0: a test install on Windows.
 
 - **Navigation**: Go to Declaration (Ctrl+B / Ctrl+click) with a Ctrl+hover underline, also on `#include` paths;
   hover docs; completion; Reformat Code (Ctrl+Alt+L). Via glsl_analyzer.
