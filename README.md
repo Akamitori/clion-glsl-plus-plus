@@ -38,7 +38,8 @@ and the tool archives are checked against pinned SHA-256 hashes.
 ./gradlew runIde          # launch a sandboxed CLion with the plugin loaded
 ```
 
-The build compiles against a locally installed CLion if `localClionPath` in `gradle.properties` points at one,
+The build compiles against a locally installed CLion if `localClionPath` in your **`~/.gradle/gradle.properties`**
+(per machine, not in the repo) points at one, e.g. `localClionPath=/home/you/.local/share/JetBrains/Toolbox/apps/clion`,
 and otherwise downloads CLion 2026.2 once (several GB, cached in `~/.gradle`).
 `./gradlew verifyPlugin` checks the built plugin against CLion 2026.2 and the local CLion.
 

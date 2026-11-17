@@ -80,7 +80,7 @@ shipped unmodified as a separate process; glslang is BSD-3 and others.
 
 - Kotlin **2.4.21** (needed to read CLion 2026.3's metadata), `apiVersion = 2.3` so it still runs on 2026.2's stdlib.
   IntelliJ Platform Gradle Plugin 2.20.1, Gradle 9.9.1 wrapper, JDK 21 toolchain via foojay (auto-downloaded).
-- `localClionPath` in `gradle.properties` builds against an installed CLion (ignored if the dir doesn't exist, then
+- `localClionPath` in **`~/.gradle/gradle.properties`** (per machine, never committed) builds against an installed CLion (ignored if the dir doesn't exist, then
   `clion("2026.2")` is downloaded). Compiling against 2026.3 won't catch APIs missing in 2026.2, so run
   **`./gradlew verifyPlugin`** (CLion 2026.2 + local). It fails on everything except internal API, which we use on
   purpose for the Ctrl+hover underline (`CtrlMouseAction`/`CtrlMouseData`, no public equivalent).

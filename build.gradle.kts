@@ -20,7 +20,7 @@ repositories {
 dependencies {
     intellijPlatform {
         // Compile against CLion; the LSP API ships with it from 2025.2.1 on.
-        // Set localClionPath in gradle.properties to use an installed CLion instead of downloading one.
+        // Set localClionPath in ~/.gradle/gradle.properties (per machine) to use an installed CLion instead of downloading one.
         // Ignored if the path doesn't exist, so the same gradle.properties works on other machines.
         val local_clion = providers.gradleProperty("localClionPath").orNull?.takeIf { file(it).isDirectory }
         if (local_clion != null) local(local_clion) else clion("2026.2")
