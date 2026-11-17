@@ -17,6 +17,8 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.lsp.api.LspServer
+import com.intellij.openapi.util.TextRange
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiFile
 import com.intellij.psi.tree.TokenSet
 import com.intellij.platform.lsp.api.LspServerManager
@@ -45,6 +47,9 @@ class GlslGotoDeclarationAction : AnAction(), DumbAware, CtrlMouseAction, GlslEd
      */
     override fun getCtrlMouseData(editor: Editor, file: PsiFile, offset: Int): CtrlMouseData? {
         if (file !is GlslFile) return null
+        include_at(editor.document.immutableCharSequence, offset)?.let { (name, range) ->
+            return if (resolve_include_for(file.project, file.virtualFile, name) != null) CtrlMouseData(listOf(range), true, null, null) else null
+        }
         val token = file.findElementAt(offset) ?: return null
         if (token.node.elementType !in NAVIGABLE_TOKENS) return null
         val vfile = file.virtualFile ?: return null
@@ -63,8 +68,17 @@ class GlslGotoDeclarationAction : AnAction(), DumbAware, CtrlMouseAction, GlslEd
         val project = e.project ?: return
         val editor = e.getData(CommonDataKeys.EDITOR) ?: return
         val file = e.getData(CommonDataKeys.VIRTUAL_FILE) ?: return
-        val server = glsl_server(project) ?: return
         val offset = (e.inputEvent as? MouseEvent)?.let { mouse_offset(editor, it) } ?: editor.caretModel.offset
+
+        // On an #include path: open that file (glsl_analyzer doesn't navigate includes).
+        include_at(editor.document.immutableCharSequence, offset)?.let { (name, _) ->
+            val target = resolve_include_for(project, file, name)
+            if (target != null) OpenFileDescriptor(project, target, 0).navigate(true)
+            else show_hint(editor, "Cannot find '$name' (searched next to this file, the project root and the include folders)")
+            return
+        }
+
+        val server = glsl_server(project) ?: return
         val position = ReadAction.compute<Position, Throwable> { lsp_position(editor, offset) }
 
         ApplicationManager.getApplication().executeOnPooledThread {
@@ -80,6 +94,33 @@ class GlslGotoDeclarationAction : AnAction(), DumbAware, CtrlMouseAction, GlslEd
             }
         }
     }
+}
+
+/** The include file `name` refers to, from `from_file`, using the same search as the error checker. */
+private fun resolve_include_for(project: Project, from_file: VirtualFile?, name: String): VirtualFile? {
+    val dir = from_file?.parent?.toNioPathOrNull() ?: return null
+    val project_dir = project.basePath?.let { java.nio.file.Path.of(it) }
+    val search_dirs = listOfNotNull(project_dir) + GlslProjectSettings.getInstance(project).check_options(project_dir).include_dirs
+    val path = resolve_include(name, dir, search_dirs) ?: return null
+    return LocalFileSystem.getInstance().findFileByNioFile(path)
+}
+
+private fun VirtualFile.toNioPathOrNull(): java.nio.file.Path? =
+    try { toNioPath() } catch (_: UnsupportedOperationException) { null }
+
+private val INCLUDE_LINE = Regex("^\\s*#\\s*include\\s*([<\"])([^>\"\\n]+)([>\"])")
+
+/**
+ * If `offset` is on the path of an `#include "..."` / `<...>` line: (header name, range of the
+ * quoted path including its delimiters). Pure (unit-tested).
+ */
+internal fun include_at(text: CharSequence, offset: Int): Pair<String, TextRange>? {
+    if (offset < 0 || offset > text.length) return null
+    val line_start = (offset - 1 downTo 0).firstOrNull { text[it] == '\n' }?.plus(1) ?: 0
+    val line_end = (offset until text.length).firstOrNull { text[it] == '\n' } ?: text.length
+    val m = INCLUDE_LINE.find(text.subSequence(line_start, line_end)) ?: return null
+    val range = TextRange(line_start + m.groups[1]!!.range.first, line_start + m.groups[3]!!.range.last + 1)
+    return if (offset >= range.startOffset && offset <= range.endOffset) m.groupValues[2] to range else null
 }
 
 /** Our editor actions that share a shortcut with a stock action CLion Nova reroutes to its C++ backend. */

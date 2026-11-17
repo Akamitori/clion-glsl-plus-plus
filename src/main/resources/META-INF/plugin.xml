@@ -54,10 +54,13 @@
         <!-- Context-aware identifier colours (functions, params, globals, structs, fields, macros). -->
         <annotator language="GLSL" implementationClass="dev.akamitori.glsl.GlslSemanticAnnotator"/>
 
+        <lang.foldingBuilder language="GLSL" implementationClass="dev.akamitori.glsl.GlslFoldingBuilder"/>
+        <lang.psiStructureViewFactory language="GLSL" implementationClass="dev.akamitori.glsl.GlslStructureViewFactory"/>
+
         <!-- glsl_analyzer sends no diagnostics; glslang provides them. -->
         <externalAnnotator language="GLSL" implementationClass="dev.akamitori.glsl.GlslangAnnotator"/>
 
-        <!-- Our Ctrl+B / Ctrl+click / Shift+F6 / Ctrl+Alt+L actions win over the stock ones in GLSL editors. -->
+        <!-- Our Ctrl+B / Ctrl+click / Shift+F6 / Alt+F7 / Ctrl+Alt+L actions win over the stock ones in GLSL editors. -->
         <actionPromoter implementation="dev.akamitori.glsl.GlslActionPromoter"/>
     </extensions>
 
@@ -81,6 +84,14 @@
                 text="Rename (GLSL)…">
             <keyboard-shortcut keymap="$default" first-keystroke="shift F6"/>
             <keyboard-shortcut keymap="Mac OS X 10.5+" first-keystroke="shift F6"/>
+            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+        </action>
+        <!-- Find Usages: glsl_analyzer has no references support, and Nova reroutes the stock one too. -->
+        <action id="dev.akamitori.glsl.FindUsages"
+                class="dev.akamitori.glsl.GlslFindUsagesAction"
+                text="Find Usages (GLSL)">
+            <keyboard-shortcut keymap="$default" first-keystroke="alt F7"/>
+            <keyboard-shortcut keymap="Mac OS X 10.5+" first-keystroke="alt F7"/>
             <add-to-group group-id="EditorPopupMenu" anchor="first"/>
         </action>
         <!-- And Reformat Code: Nova sends the stock one to its C++ backend, so glsl_analyzer never saw it. -->

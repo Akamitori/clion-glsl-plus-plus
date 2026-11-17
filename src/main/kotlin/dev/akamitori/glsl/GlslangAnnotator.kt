@@ -199,7 +199,7 @@ internal fun expand_includes(text: String, dir: Path, search_dirs: List<Path>, r
 }
 
 /** Relative to the including file first, then each search dir (project root, configured include folders). */
-private fun resolve_include(name: String, dir: Path, search_dirs: List<Path>): Path? =
+internal fun resolve_include(name: String, dir: Path, search_dirs: List<Path>): Path? =
     (listOf(dir) + search_dirs)
         .map { it.resolve(name).normalize() }
         .firstOrNull { Files.isRegularFile(it) }

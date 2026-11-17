@@ -15,6 +15,10 @@ better-glsl) are subpar or unmaintained. Targets CLion 2025.3+ (sinceBuild 253),
 | Reformat | glsl_analyzer `textDocument/formatting`, called directly | `GlslFormat.kt` |
 | Rename | our own token-level rename; glsl_analyzer only locates the declaration | `GlslRename.kt` |
 | Diagnostics | glslang (`glslangValidator`) as an `ExternalAnnotator` | `GlslangAnnotator.kt` |
+| Find Usages | same occurrence search as rename (`find_symbol_occurrences`), shown in the Find tool window | `GlslFindUsages.kt` |
+| Folding | multi-line `{}` blocks and block comments from the lexer (`fold_regions`) | `GlslFolding.kt` |
+| Structure view | heuristic top-level outline (`outline`): functions, structs/blocks + members, globals, macros | `GlslStructure.kt` |
+| `#include` navigation | Ctrl+B / Ctrl+click on the path (`include_at` + `resolve_include`) | `GlslNavigation.kt` |
 | Settings | tool paths: app-level `GlslSettings`; target/defines/include dirs: project-level `GlslProjectSettings` (`.idea/glsl.xml`); one `projectConfigurable` | `GlslSettings.kt` |
 
 glsl_analyzer 1.7.1 capabilities: completion, hover, definition, formatting. It sends **no diagnostics** (push or pull),
@@ -24,7 +28,8 @@ glsl_analyzer 1.7.1 capabilities: completion, hover, definition, formatting. It 
 
 Nova (Radler) routes several stock editor actions to its ReSharper C++ backend for *any* file in the project, and that
 backend knows nothing about GLSL. Symptom: the action silently does nothing, or "Cannot find declaration to go to".
-Confirmed for `GotoDeclaration` (Ctrl+B, Ctrl+click), `RenameElement` (Shift+F6) and `ReformatCode` (Ctrl+Alt+L).
+Confirmed for `GotoDeclaration` (Ctrl+B, Ctrl+click), `RenameElement` (Shift+F6) and `ReformatCode` (Ctrl+Alt+L);
+Find Usages (Alt+F7) is assumed to be the same and gets the same treatment.
 The routing is hard-coded (project-model entities in the data context -> `BackendOnly`) and can't be configured:
 `backend.actions.support` / `RiderActionSupportPolicy` was tried and does **not** help. Subclassing
 `GotoDeclarationAction` also fails, since its handler is rerouted further down.
@@ -79,14 +84,14 @@ shipped unmodified as a separate process; glslang is BSD-3 and others.
 `./gradlew test`: plain JUnit 4 on pure functions, no headless IDE (fast, and independent of Nova starting up).
 The IDE-facing classes are thin wrappers; the logic they call is `internal` and text-in/result-out:
 `semantic_highlights`, `expand_includes`, `inject_defines`, `parse_defines`, `glslang_args`, `parse_glslang_output`,
-`problem_range`, `rename_scope`, `rename_ranges`, plus the lexer. Four tests run the real bundled glslang end to end
+`problem_range`, `rename_scope`, `rename_ranges`, `fold_regions`, `outline`, `include_at`, plus the lexer. Four tests run the real bundled glslang end to end
 (OpenGL, Vulkan, defines, includes; skipped if it isn't built for the OS).
 **Put new logic in a pure function and test it there.**
 
 ## Known gaps / ideas
 
 - Check `.glsl` include files in the context of an including shader.
-- Code folding, structure view / breadcrumbs, Find Usages (can reuse rename scoping), Ctrl+click on `#include`.
+- Breadcrumbs / sticky lines: need a nested PSI, which this plugin deliberately doesn't have.
 - GLSL injection into C++ raw strings.
 - Never tested on Windows or on CLion 2025.3. No macOS bundle (tools are found on PATH there).
 - Rename: a local that shadows a global in another function is renamed with the global.

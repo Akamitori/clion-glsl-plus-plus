@@ -46,39 +46,9 @@ class GlslRenameAction : AnAction(), DumbAware, GlslEditorAction {
         val project = e.project ?: return
         val editor = e.getData(CommonDataKeys.EDITOR) ?: return
         val file = e.getData(CommonDataKeys.VIRTUAL_FILE) ?: return
-        val toks = lex(editor.document.immutableCharSequence)
-        val at = token_index_at(toks, editor.caretModel.offset)
-        if (at == null || toks[at].type != GlslTokens.IDENT) {
-            show_hint(editor, "Only your own functions, variables, structs and macros can be renamed")
-            return
-        }
-        val name = toks[at].text
-        val position = lsp_position(editor, toks[at].start)
-        val server = glsl_server(project)
-
-        val plan = ProgressManager.getInstance().runProcessWithProgressSynchronously<Map<VirtualFile, List<TextRange>>?, Exception>(
-            {
-                val def = server?.let { request_definition(it, file, position).firstOrNull() }
-                ReadAction.compute<Map<VirtualFile, List<TextRange>>?, Exception> {
-                    val def_file = def?.let { server.descriptor.findFileByUri(it.first) }
-                    val def_doc = def_file?.let { FileDocumentManager.getInstance().getDocument(it) }
-                    if (def_file != null && def_doc != null) {
-                        val def_offset = offset_of(def_doc, def.second.start.line, def.second.start.character)
-                        plan_rename(project, name, def_file, def_doc, def_offset)
-                    } else if (Regex("^\\s*#\\s*define\\s+${Regex.escape(name)}\\b", RegexOption.MULTILINE)
-                            .containsMatchIn(editor.document.immutableCharSequence)) {
-                        plan_global(project, name, file)  // macros: glsl_analyzer doesn't resolve them
-                    } else {
-                        null
-                    }
-                }
-            },
-            "Finding usages of '$name'", true, project,
-        )
-        if (plan == null) {
-            show_hint(editor, "Cannot rename '$name': no declaration found (built-in?)")
-            return
-        }
+        val found = find_symbol_occurrences(project, editor, file, "rename") ?: return
+        val name = found.name
+        val plan = found.ranges
 
         val count = plan.values.sumOf { it.size }
         val where = if (plan.size == 1) "" else " in ${plan.size} files"
@@ -98,6 +68,53 @@ class GlslRenameAction : AnAction(), DumbAware, GlslEditorAction {
     }
 }
 
+/** A symbol under the caret and every occurrence of it, per file. Shared by rename and Find Usages. */
+internal class SymbolOccurrences(val name: String, val ranges: Map<VirtualFile, List<TextRange>>)
+
+/**
+ * Finds the symbol under the caret and its occurrences (same scoping as rename), with a progress
+ * dialog. Call on the EDT. Shows a hint and returns null when there's nothing of ours to act on;
+ * `verb` goes in that hint, e.g. "rename" or "find usages of".
+ */
+internal fun find_symbol_occurrences(
+    project: Project, editor: com.intellij.openapi.editor.Editor, file: VirtualFile, verb: String,
+): SymbolOccurrences? {
+    val toks = lex(editor.document.immutableCharSequence)
+    val at = token_index_at(toks, editor.caretModel.offset)
+    if (at == null || toks[at].type != GlslTokens.IDENT) {
+        show_hint(editor, "Can only $verb your own functions, variables, structs and macros")
+        return null
+    }
+    val name = toks[at].text
+    val position = lsp_position(editor, toks[at].start)
+    val server = glsl_server(project)
+
+    val plan = ProgressManager.getInstance().runProcessWithProgressSynchronously<Map<VirtualFile, List<TextRange>>?, Exception>(
+        {
+            val def = server?.let { request_definition(it, file, position).firstOrNull() }
+            ReadAction.compute<Map<VirtualFile, List<TextRange>>?, Exception> {
+                val def_file = def?.let { server.descriptor.findFileByUri(it.first) }
+                val def_doc = def_file?.let { FileDocumentManager.getInstance().getDocument(it) }
+                if (def_file != null && def_doc != null) {
+                    val def_offset = offset_of(def_doc, def.second.start.line, def.second.start.character)
+                    plan_rename(project, name, def_file, def_doc, def_offset)
+                } else if (Regex("^\\s*#\\s*define\\s+${Regex.escape(name)}\\b", RegexOption.MULTILINE)
+                        .containsMatchIn(editor.document.immutableCharSequence)) {
+                    plan_global(project, name, file)  // macros: glsl_analyzer doesn't resolve them
+                } else {
+                    null
+                }
+            }
+        },
+        "Finding usages of '$name'", true, project,
+    )
+    if (plan == null) {
+        show_hint(editor, "Cannot $verb '$name': no declaration found (built-in?)")
+        return null
+    }
+    return SymbolOccurrences(name, plan)
+}
+
 /** A valid GLSL identifier that the lexer sees as a plain identifier (so not a keyword, type, builtin or gl_*). */
 private object IdentifierValidator : InputValidator {
     override fun checkInput(input: String): Boolean {
@@ -110,12 +127,12 @@ private object IdentifierValidator : InputValidator {
 
 // ---- scope ----
 
-private class LexTok(val type: IElementType, val text: String, val start: Int) {
+internal class LexTok(val type: IElementType, val text: String, val start: Int) {
     val end get() = start + text.length
 }
 
 /** Significant tokens only (no whitespace or comments). */
-private fun lex(text: CharSequence): List<LexTok> {
+internal fun lex(text: CharSequence): List<LexTok> {
     val out = ArrayList<LexTok>()
     val lexer = GlslLexer()
     lexer.start(text, 0, text.length, 0)
