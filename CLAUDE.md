@@ -20,6 +20,7 @@ better-glsl) are subpar or unmaintained. Targets CLion 2026.2+ (sinceBuild 262),
 | Structure view | heuristic top-level outline (`outline`): functions, structs/blocks + members, globals, macros | `GlslStructure.kt` |
 | Breadcrumbs | outline + `crumb_path`; crumbs are the *name tokens* of enclosing declarations, `getParent` walks outward (flat PSI) | `GlslStructure.kt` |
 | `#include` navigation | Ctrl+B / Ctrl+click on the path (`include_at` + `resolve_include`) | `GlslNavigation.kt` |
+| Conflict warning | at project open, which file type owns each of `GLSL_EXTENSIONS` (`foreign_owners`); warns if not ours | `GlslConflicts.kt` |
 | Settings | tool paths: app-level `GlslSettings`; target/defines/include dirs: project-level `GlslProjectSettings` (`.idea/glsl.xml`); one `projectConfigurable` | `GlslSettings.kt` |
 
 glsl_analyzer 1.7.1 capabilities: completion, hover, definition, formatting. It sends **no diagnostics** (push or pull),
@@ -114,5 +115,5 @@ The IDE-facing classes are thin wrappers; the logic they call is `internal` and 
 
 Akamitori's preference: snake_case for locals and private helpers where Kotlin/IntelliJ API overrides don't force
 camelCase. Keep it minimal and explicit, with no framework magic beyond what the platform requires.
-**Language ID is `dev.akamitori.glsl`, never `GLSL`**: language IDs are global and glsl4idea owns `GLSL` (a duplicate throws `ImplementationConflictException` and kills the plugin); `GlslPluginXmlTest` guards it.
+**Language ID and file type name are `dev.akamitori.glsl`, never `GLSL`**: language IDs are global and glsl4idea owns `GLSL` (a duplicate throws `ImplementationConflictException` and kills the plugin); `GlslPluginXmlTest` guards it.
 Kotlin gotcha already hit once: `Set<Path> + path` adds the path's *name components* (Path is Iterable); use `plusElement`.

@@ -38,4 +38,21 @@ class GlslPluginXmlTest {
         assertTrue(plugin_xml.contains("<incompatible-with>GLSL</incompatible-with>"))
         assertTrue(plugin_xml.contains("<incompatible-with>OpenGL-Plugin</incompatible-with>"))
     }
+
+    @Test
+    fun `file type name is unique and the extension list matches plugin xml`() {
+        assertTrue(plugin_xml.contains("<fileType name=\"${GlslLanguage.ID}\""))
+        val exts = Regex("""extensions="([^"]*)"""").find(plugin_xml)!!.groupValues[1].split(';')
+        assertEquals(GLSL_EXTENSIONS, exts)
+    }
+
+    @Test
+    fun `foreign owners are grouped by file type`() {
+        val owners = mapOf("frag" to "GLSL Support", "vert" to "GLSL Support", "comp" to "Plain text")
+        assertEquals(
+            mapOf("GLSL Support" to listOf("vert", "frag"), "Plain text" to listOf("comp")),
+            foreign_owners(GLSL_EXTENSIONS) { owners[it] },
+        )
+        assertEquals(emptyMap<String, List<String>>(), foreign_owners(GLSL_EXTENSIONS) { null })
+    }
 }

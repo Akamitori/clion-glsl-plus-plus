@@ -27,7 +27,7 @@
     <incompatible-with>OpenGL-Plugin</incompatible-with>
 
     <extensions defaultExtensionNs="com.intellij">
-        <fileType name="GLSL"
+        <fileType name="dev.akamitori.glsl"
                   language="dev.akamitori.glsl"
                   implementationClass="dev.akamitori.glsl.GlslFileType"
                   fieldName="INSTANCE"
@@ -52,6 +52,8 @@
                                  instance="dev.akamitori.glsl.GlslConfigurable"/>
 
         <notificationGroup id="GLSL" displayType="BALLOON"/>
+        <!-- Warns when another plugin (or a user mapping) owns some of our extensions. -->
+        <postStartupActivity implementation="dev.akamitori.glsl.GlslConflictCheck"/>
 
         <platform.lsp.integrationProvider implementation="dev.akamitori.glsl.GlslLspIntegrationProvider"/>
 

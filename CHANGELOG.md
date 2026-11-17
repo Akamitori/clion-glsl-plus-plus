@@ -6,6 +6,10 @@
   our file type failed with `ImplementationConflictException` (found in the Windows test). Our language ID is now
   `dev.akamitori.glsl` (still shown as "GLSL"), and glsl4idea (`GLSL`) and rmordechay's GLSL (`OpenGL-Plugin`), which
   claim the same extensions, are declared `incompatible-with`.
+- The file type's internal name is now `dev.akamitori.glsl` too (shown as "GLSL"); the platform rejects a second
+  file type named `GLSL` the same way.
+- **New: a warning when some shader extensions open with another file type** (another GLSL plugin, or a mapping in
+  Settings | Editor | File Types), listing which extensions and the owner. Checked once per IDE session at project open.
 
 - **Requires CLion 2026.2 or newer** (was 2025.3). Moved to the LspIntegrationProvider / LspClient API introduced
   in 2026.2; no deprecated, experimental or scheduled-for-removal API left. `verifyPlugin` passes on 2026.2 and 2026.3.
