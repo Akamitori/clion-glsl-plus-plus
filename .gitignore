@@ -10,3 +10,8 @@ build/
 .idea/
 *.iml
 out/
+
+# ...except the sample project's GLSL settings, which the tests and docs/testing-windows.md rely on.
+!/testdata/sample-project/.idea/
+/testdata/sample-project/.idea/*
+!/testdata/sample-project/.idea/glsl.xml

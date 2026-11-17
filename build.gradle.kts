@@ -144,3 +144,8 @@ tasks.withType<org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask>(
     // Lands next to lib/ in the plugin directory, and therefore in the buildPlugin zip too.
     from(bundleTools) { into(intellijPlatform.projectName.map { "$it" }) }
 }
+
+// The end-to-end tests run the bundled glslang; without this they would silently skip on a fresh clone.
+tasks.test {
+    dependsOn(bundleTools)
+}

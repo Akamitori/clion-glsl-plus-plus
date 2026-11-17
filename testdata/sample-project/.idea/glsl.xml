@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="GlslProjectSettings">
+    <option name="defines" value="SCALE=2.0" />
+    <option name="target" value="vulkan1.3" />
+  </component>
+</project>

@@ -106,7 +106,8 @@ The IDE-facing classes are thin wrappers; the logic they call is `internal` and 
 
 - Sticky lines: would need a nested PSI (breadcrumbs work around it via `BreadcrumbsProvider.getParent`).
 - GLSL injection into C++ raw strings.
-- Never tested on Windows. No macOS bundle (tools are found on PATH there).
+- Never tested on Windows: follow **`docs/testing-windows.md`** (agent-runnable plan; sample project in
+  `testdata/sample-project`, checked by `GlslSampleProjectTest`). No macOS bundle (tools are found on PATH there).
 
 ## Style
 
