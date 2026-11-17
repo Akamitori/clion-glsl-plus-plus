@@ -1,0 +1,83 @@
+<idea-plugin>
+    <id>dev.akamitori.glsl</id>
+    <name>GLSL (glsl_analyzer)</name>
+    <vendor>Akamitori</vendor>
+    <description><![CDATA[
+    GLSL support backed by the <a href="https://github.com/nolanderc/glsl_analyzer">glsl_analyzer</a> language server:
+    completion, go to definition, find usages, hover docs, diagnostics, formatting and #include awareness.
+    A small built-in lexer provides instant syntax highlighting.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.lsp</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <fileType name="GLSL"
+                  language="GLSL"
+                  implementationClass="dev.akamitori.glsl.GlslFileType"
+                  fieldName="INSTANCE"
+                  extensions="glsl;vert;frag;geom;comp;tesc;tese;mesh;task;rgen;rint;rahit;rchit;rmiss;rcall;vsh;fsh"/>
+
+        <lang.parserDefinition language="GLSL" implementationClass="dev.akamitori.glsl.GlslParserDefinition"/>
+        <lang.syntaxHighlighterFactory language="GLSL" implementationClass="dev.akamitori.glsl.GlslSyntaxHighlighterFactory"/>
+        <lang.commenter language="GLSL" implementationClass="dev.akamitori.glsl.GlslCommenter"/>
+        <lang.braceMatcher language="GLSL" implementationClass="dev.akamitori.glsl.GlslBraceMatcher"/>
+        <colorSettingsPage implementation="dev.akamitori.glsl.GlslColorSettingsPage"/>
+        <!-- Our own defaults for the bundled schemes; each is set explicitly since palettes differ per theme. -->
+        <additionalTextAttributes scheme="Darcula" file="colorSchemes/GlslDarcula.xml"/>
+        <additionalTextAttributes scheme="Dark" file="colorSchemes/GlslDark.xml"/>
+        <additionalTextAttributes scheme="Islands Dark" file="colorSchemes/GlslDark.xml"/>
+        <additionalTextAttributes scheme="Default" file="colorSchemes/GlslDefault.xml"/>
+        <additionalTextAttributes scheme="Light" file="colorSchemes/GlslDefault.xml"/>
+        <additionalTextAttributes scheme="IntelliJ Light" file="colorSchemes/GlslDefault.xml"/>
+
+        <applicationConfigurable parentId="language"
+                                 id="dev.akamitori.glsl.settings"
+                                 displayName="GLSL"
+                                 instance="dev.akamitori.glsl.GlslConfigurable"/>
+
+        <notificationGroup id="GLSL" displayType="BALLOON"/>
+
+        <platform.lsp.serverSupportProvider implementation="dev.akamitori.glsl.GlslLspServerSupportProvider"/>
+
+        <!-- Context-aware identifier colours (functions, params, globals, structs, fields, macros). -->
+        <annotator language="GLSL" implementationClass="dev.akamitori.glsl.GlslSemanticAnnotator"/>
+
+        <!-- glsl_analyzer sends no diagnostics; glslang provides them. -->
+        <externalAnnotator language="GLSL" implementationClass="dev.akamitori.glsl.GlslangAnnotator"/>
+
+        <!-- Our Ctrl+B / Ctrl+click / Shift+F6 / Ctrl+Alt+L actions win over the stock ones in GLSL editors. -->
+        <actionPromoter implementation="dev.akamitori.glsl.GlslActionPromoter"/>
+    </extensions>
+
+    <actions>
+        <!--
+          CLion Nova reroutes the stock GotoDeclaration action to the ReSharper backend for files in the
+          project, which knows nothing about GLSL. This copy has its own id, so it stays on the IntelliJ side
+          and resolves through the LSP client. It is only enabled in GLSL files.
+        -->
+        <action id="dev.akamitori.glsl.GotoDeclaration"
+                class="dev.akamitori.glsl.GlslGotoDeclarationAction"
+                text="Go to Declaration (GLSL)">
+            <keyboard-shortcut keymap="$default" first-keystroke="control B"/>
+            <mouse-shortcut keymap="$default" keystroke="control button1"/>
+            <keyboard-shortcut keymap="Mac OS X 10.5+" first-keystroke="meta B"/>
+            <mouse-shortcut keymap="Mac OS X 10.5+" keystroke="meta button1"/>
+        </action>
+        <!-- Same story for Rename: glsl_analyzer can't rename, and Nova sends the stock one to its C++ backend. -->
+        <action id="dev.akamitori.glsl.Rename"
+                class="dev.akamitori.glsl.GlslRenameAction"
+                text="Rename (GLSL)…">
+            <keyboard-shortcut keymap="$default" first-keystroke="shift F6"/>
+            <keyboard-shortcut keymap="Mac OS X 10.5+" first-keystroke="shift F6"/>
+            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+        </action>
+        <!-- And Reformat Code: Nova sends the stock one to its C++ backend, so glsl_analyzer never saw it. -->
+        <action id="dev.akamitori.glsl.Reformat"
+                class="dev.akamitori.glsl.GlslReformatAction"
+                text="Reformat GLSL">
+            <keyboard-shortcut keymap="$default" first-keystroke="control alt L"/>
+            <keyboard-shortcut keymap="Mac OS X 10.5+" first-keystroke="meta alt L"/>
+        </action>
+    </actions>
+</idea-plugin>

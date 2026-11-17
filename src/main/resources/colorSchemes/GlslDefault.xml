@@ -1,0 +1,9 @@
+<list>
+    <!-- Built-in functions: amber italic, distinct from user functions (which use the scheme's function-declaration teal). -->
+    <option name="GLSL_BUILTIN_FUNC">
+        <value>
+            <option name="FOREGROUND" value="9e5a00"/>
+            <option name="FONT_TYPE" value="2"/>
+        </value>
+    </option>
+</list>

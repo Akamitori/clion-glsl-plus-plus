@@ -1,0 +1,12 @@
+# Gradle / Kotlin build output and caches
+build/
+.gradle/
+.kotlin/
+
+# IntelliJ Platform Gradle Plugin: sandbox IDE config, logs and caches
+.intellijPlatform/
+
+# IDE project files
+.idea/
+*.iml
+out/

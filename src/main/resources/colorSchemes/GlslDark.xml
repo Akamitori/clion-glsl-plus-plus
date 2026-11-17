@@ -1,0 +1,9 @@
+<list>
+    <!-- New UI Dark / Islands Dark: numbers are cyan and functions blue here, so built-ins go gold. -->
+    <option name="GLSL_BUILTIN_FUNC">
+        <value>
+            <option name="FOREGROUND" value="e8bf6a"/>
+            <option name="FONT_TYPE" value="2"/>
+        </value>
+    </option>
+</list>
