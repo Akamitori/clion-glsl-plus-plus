@@ -8,6 +8,7 @@ import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -28,7 +29,9 @@ import java.nio.file.Path
  * Only files with a stage extension are checked. A bare .glsl is usually an include library that
  * doesn't compile on its own (no #version, no main), so checking it would only produce noise.
  */
-class GlslangAnnotator : ExternalAnnotator<GlslangAnnotator.Input, List<Problem>>() {
+// glslang needs no index, so it must also run while CLion is indexing (dumb mode); without DumbAware
+// the daemon skips it then, and errors only appear after the next edit.
+class GlslangAnnotator : ExternalAnnotator<GlslangAnnotator.Input, List<Problem>>(), DumbAware {
 
     class Input(val text: String, val dir: Path, val stage: String, val project_dir: Path?)
 

@@ -47,6 +47,8 @@ Hover and completion go through the platform LSP client and work as-is.
 - `#extension GL_GOOGLE_include_directive` lines are blanked (plain mode rejects them; line count is kept).
 - Only files with a stage extension are checked; a bare `.glsl` is treated as an include library.
 - glslang stops at the first undeclared identifier ("compilation terminated"): one at a time.
+- Annotators must be `DumbAware`. CLion briefly re-enters dumb mode about 1.5 s after a project opens; a
+  non-DumbAware annotator is skipped then and its errors only appear after the next edit.
 
 ## Bundled tools
 
