@@ -22,10 +22,6 @@
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.lsp</depends>
 
-    <!-- Other GLSL plugins claim the same file extensions (and glsl4idea the language ID "GLSL"). -->
-    <incompatible-with>GLSL</incompatible-with>
-    <incompatible-with>OpenGL-Plugin</incompatible-with>
-
     <extensions defaultExtensionNs="com.intellij">
         <fileType name="dev.akamitori.glsl"
                   language="dev.akamitori.glsl"

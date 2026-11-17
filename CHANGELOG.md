@@ -4,8 +4,8 @@
 
 - **Fixed: the plugin broke when glsl4idea ("GLSL Support") was installed.** Both used the language ID `GLSL`, so
   our file type failed with `ImplementationConflictException` (found in the Windows test). Our language ID is now
-  `dev.akamitori.glsl` (still shown as "GLSL"), and glsl4idea (`GLSL`) and rmordechay's GLSL (`OpenGL-Plugin`), which
-  claim the same extensions, are declared `incompatible-with`.
+  `dev.akamitori.glsl` (still shown as "GLSL"). Other GLSL plugins can stay installed; which one opens a file is up
+  to the user (see the warning below).
 - The file type's internal name is now `dev.akamitori.glsl` too (shown as "GLSL"); the platform rejects a second
   file type named `GLSL` the same way.
 - **New: a warning when some shader extensions open with another file type** (another GLSL plugin, or a mapping in

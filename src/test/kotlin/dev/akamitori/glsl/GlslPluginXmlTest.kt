@@ -34,9 +34,9 @@ class GlslPluginXmlTest {
     }
 
     @Test
-    fun `plugin xml declares the other GLSL plugins incompatible`() {
-        assertTrue(plugin_xml.contains("<incompatible-with>GLSL</incompatible-with>"))
-        assertTrue(plugin_xml.contains("<incompatible-with>OpenGL-Plugin</incompatible-with>"))
+    fun `other GLSL plugins are not declared incompatible`() {
+        // Coexistence is the user's call; unique IDs prevent the crash and GlslConflictCheck warns about extensions.
+        assertFalse(plugin_xml.contains("<incompatible-with>"))
     }
 
     @Test

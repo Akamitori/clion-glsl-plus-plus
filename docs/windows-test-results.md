@@ -96,3 +96,11 @@ replaced by the fixed build, and `GLSL` and `OpenGL-Plugin` were added to `%APPD
 
 Still to do: run `verifyPlugin` with the fix, and check how CLion handles `incompatible-with` when a user installs
 the plugin next to glsl4idea (expected: a prompt to disable one of them).
+
+## Follow-up (Linux, 2026-11-18)
+
+- `verifyPlugin` with the fix: Compatible on CL-262 and CL-263.
+- The file type's name was made unique as well (`dev.akamitori.glsl`): the platform also rejects a second file type
+  named `GLSL` ("Trying to override already registered file type").
+- `incompatible-with` was **dropped** again: which plugin handles shaders is the user's call. Instead, a warning
+  at project open lists any of our extensions owned by another file type (`GlslConflicts.kt`).
