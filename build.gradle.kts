@@ -1,3 +1,4 @@
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import java.net.URI
 import java.security.MessageDigest
 
@@ -23,7 +24,12 @@ dependencies {
         // Ignored if the path doesn't exist, so the same gradle.properties works on other machines.
         val local_clion = providers.gradleProperty("localClionPath").orNull?.takeIf { file(it).isDirectory }
         if (local_clion != null) local(local_clion) else clion("2025.3")
+        // Puts the IDE jars on the test classpath. The tests are plain JUnit on pure functions,
+        // no headless IDE, so they're fast and don't depend on CLion Nova starting up.
+        testFramework(TestFrameworkType.Platform)
     }
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.opentest4j:opentest4j:1.3.0")
 }
 
 kotlin {

@@ -1,42 +1,90 @@
-# clion-glsl: GLSL plugin for CLion (handoff brief)
+# clion-glsl: GLSL plugin for CLion
 
-## Goal
-A CLion plugin that properly understands GLSL. Existing marketplace plugins (glsl4idea, "GLSL" by rmordechay, better-glsl) are subpar or unmaintained.
+A CLion plugin that properly understands GLSL. Existing marketplace plugins (glsl4idea, "GLSL" by rmordechay,
+better-glsl) are subpar or unmaintained. Targets CLion 2025.3+ (sinceBuild 253), developed against CLion 2026.3 Nova.
 
-## Decided approach: LSP wrapper + tiny native lexer
-- Semantics come from **glsl_analyzer** (github.com/nolanderc/glsl_analyzer), a Zig language server: completion, goto-def, find refs, hover docs, diagnostics, formatter, #include handling. It talks over **stdio by default** (`glsl_analyzer`, no args), or `--port <PORT>` for TCP. Install: release binary from GitHub into `~/.local/bin`, or `zig build install -Doptimize=ReleaseSafe --prefix ~/.local/`.
-- The plugin uses the **IntelliJ Platform LSP API** (`com.intellij.platform.lsp.api.*`). CLion supports it. From 2025.2.1 on, the dependency is `<depends>com.intellij.modules.lsp</depends>` (before that it was `com.intellij.modules.ultimate`).
-- A hand-written, stateless Kotlin lexer handles instant highlighting, brace matching and commenting only. Do NOT write a real grammar/PSI. The parser is flat: one root node over all tokens.
+## Architecture
 
-## Build setup (already written)
-- `build.gradle.kts`: Kotlin JVM 2.2.21, `org.jetbrains.intellij.platform` 2.20.1 (requires **Gradle 9.x**), `clion("2025.3")`, JVM toolchain 21, sinceBuild 253, untilBuild open (`provider { null }`), `buildSearchableOptions = false`.
-- No Gradle wrapper yet. Generate it: `gradle wrapper --gradle-version 9.2.1` (or the latest 9.x).
-- Commands: `./gradlew runIde` (sandbox CLion), `./gradlew buildPlugin` (zip goes to `build/distributions/`, install via Settings > Plugins > Install from Disk).
+| Concern | Source | File |
+|---|---|---|
+| Instant highlighting, brace matching, commenting | hand-written stateless lexer | `GlslLexer.kt`, `GlslHighlighting.kt`, `GlslEditor.kt` |
+| PSI | flat: one file node over all lexer tokens, **no grammar** | `GlslParserDefinition.kt`, `GlslLanguage.kt` |
+| Semantic colours (functions, params, globals, structs, fields, swizzles, macros, layout qualifiers) | heuristic token scan, an `Annotator` | `GlslSemanticAnnotator.kt` |
+| Hover, completion | glsl_analyzer over the IntelliJ LSP API (stdio) | `GlslLsp.kt` |
+| Go to declaration, Ctrl+hover underline | glsl_analyzer `textDocument/definition`, called **directly** by our action | `GlslNavigation.kt` |
+| Reformat | glsl_analyzer `textDocument/formatting`, called directly | `GlslFormat.kt` |
+| Rename | our own token-level rename; glsl_analyzer only locates the declaration | `GlslRename.kt` |
+| Diagnostics | glslang (`glslangValidator`) as an `ExternalAnnotator` | `GlslangAnnotator.kt` |
+| Settings (tool paths) | app-level `PersistentStateComponent` + Kotlin UI DSL | `GlslSettings.kt` |
 
-## Files done
-- `src/main/resources/META-INF/plugin.xml`: registers every extension below. Keep the class names in step with it.
-- `src/main/resources/icons/glsl.svg`
-- `GlslLanguage.kt`: `GlslLanguage`, `GlslIcons`, `GlslFileType` (Kotlin object; plugin.xml uses fieldName="INSTANCE"), `GlslFile`.
-- `GlslLexer.kt`: `GlslTokenType`, `GlslTokens` (incl. COMMENTS, STRINGS TokenSets), `GlslLexer` (keywords, types incl. opaque-type regex, gl_* builtins, builtin funcs, numbers with suffixes, `#directive`, `#include <...>` treated as a string).
+glsl_analyzer 1.7.1 capabilities: completion, hover, definition, formatting. It sends **no diagnostics** (push or pull),
+**no semantic tokens**, and has **no references/rename**. That is why diagnostics, semantic colours and rename are ours.
 
-## Files still to write (names must match plugin.xml)
-1. `GlslParserDefinition`: lexer = GlslLexer; flat PsiParser (mark, advance to EOF, done(root)); `IFileElementType(GlslLanguage)`; comment/string token sets; createElement = ASTWrapperPsiElement; createFile = GlslFile.
-2. `GlslSyntaxHighlighter` + `GlslSyntaxHighlighterFactory`: TextAttributesKeys with `GLSL_` prefixes that fall back to DefaultLanguageHighlighterColors (TYPE falls back to KEYWORD, BUILTIN_VAR to PREDEFINED_SYMBOL, BUILTIN_FUNC to STATIC_METHOD, PP_DIRECTIVE to METADATA, plus the usual comment/number/string/brace/paren/bracket/semicolon/comma/dot/operator keys, and BAD_CHARACTER).
-3. `GlslColorSettingsPage`: demo shader text and AttributesDescriptors for every key.
-4. `GlslCommenter`: `//`, `/* */`.
-5. `GlslBraceMatcher`: PairedBraceMatcher for () {} [] ({} structural).
-6. `GlslSettings`: `@Service(APP)`, `@State(name="GlslSettings", storages=[Storage("glsl.xml")])`, PersistentStateComponent with `data class State(var analyzerPath: String = "")`.
-7. `GlslConfigurable`: BoundConfigurable, Kotlin UI DSL; a text field bound to analyzerPath with a comment "empty = search PATH and ~/.local/bin". On apply, restart servers in all open projects: `LspServerManager.getInstance(p).stopAndRestartIfNeeded(GlslLspServerSupportProvider::class.java)`.
-8. Executable lookup: use the configured path if set; otherwise `PathEnvironmentVariableUtil.findExecutableInPathOnAnyOS("glsl_analyzer")`; otherwise check `~/.local/bin`, `/usr/local/bin` and `/opt/homebrew/bin`. A CLion started from the desktop often lacks the shell PATH, which is why the explicit fallbacks are there.
-9. `GlslLspServerSupportProvider`: in `fileOpened`, if `file.fileType == GlslFileType`, resolve the exe. If it is missing, show a one-time-per-session warning in the "GLSL" notification group with a "Configure…" action (`ShowSettingsUtil.showSettingsDialog(project, GlslConfigurable::class.java)`). Otherwise call `serverStarter.ensureServerStarted(GlslLspServerDescriptor(project, exe))`. Also override `createLspServerWidgetItem` to return `LspServerWidgetItem(lspServer, currentFile, GlslIcons.FILE, GlslConfigurable::class.java)`.
-10. `GlslLspServerDescriptor`: `ProjectWideLspServerDescriptor(project, "GLSL")`; `isSupportedFile` = GlslFileType; `createCommandLine` = `GeneralCommandLine(exe).withWorkDirectory(project.basePath)`.
-11. `README.md`: install glsl_analyzer, build, install, troubleshooting.
+## CLion Nova: the big trap
 
-## Known risks / verify on first build
-- Nothing here has been compiled yet. The workspace it was written in had no access to JetBrains or Maven repos.
-- If `com.intellij.platform.lsp.*` is not on the compile classpath with `clion("2025.3")`, check the IntelliJ Platform Gradle Plugin docs for how to add the LSP module (e.g. `bundledModule(...)`).
-- 2026.2 open-sourced the LSP client API and introduced new names (`LspIntegrationProvider`, `ProjectWideLspClientDescriptor`). The older `LspServerSupportProvider` / `ProjectWideLspServerDescriptor` names are used here for 2025.3 compatibility. Fine if they show as deprecated on newer IDEs.
-- Check whether glsl_analyzer sends semantic tokens. If it does, they layer on top of the lexer highlighting automatically.
+Nova (Radler) routes several stock editor actions to its ReSharper C++ backend for *any* file in the project, and that
+backend knows nothing about GLSL. Symptom: the action silently does nothing, or "Cannot find declaration to go to".
+Confirmed for `GotoDeclaration` (Ctrl+B, Ctrl+click), `RenameElement` (Shift+F6) and `ReformatCode` (Ctrl+Alt+L).
+The routing is hard-coded (project-model entities in the data context -> `BackendOnly`) and can't be configured:
+`backend.actions.support` / `RiderActionSupportPolicy` was tried and does **not** help. Subclassing
+`GotoDeclarationAction` also fails, since its handler is rerouted further down.
+
+What works: a GLSL-only action under **our own action id** bound to the same shortcut, which talks to glsl_analyzer
+itself (`sendRequestSync`) and applies the result. Each implements the `GlslEditorAction` marker; `GlslActionPromoter`
+puts them first and they disable themselves outside GLSL files, so C++ still gets the stock action.
+Hover and completion go through the platform LSP client and work as-is.
+
+**Debugging tip:** glsl_analyzer's stderr (`debug: method: '...'`) appears in the sandbox `idea.log`
+(`.intellijPlatform/sandbox/.../log_runIde/idea.log`). If an LSP method never shows up there, Nova swallowed the action.
+
+## glslang integration
+
+- Runs in **plain OpenGL mode**. `-V`/`-G` are the only modes that process `#include`, but they enforce SPIR-V rules
+  (`layout(location)` on every uniform, no loose uniforms for Vulkan) and give false errors on normal OpenGL shaders.
+- So we **expand `#include` ourselves** (`expand_includes`): each included file gets its own source-string number via
+  `#line 1 N`, and errors with string != 0 are reported on the top-level `#include` line. Includes are resolved
+  relative to the file, then the project root, and read from the editor buffer if open (unsaved edits).
+- `#extension GL_GOOGLE_include_directive` lines are blanked (plain mode rejects them; line count is kept).
+- Only files with a stage extension are checked; a bare `.glsl` is treated as an include library.
+- glslang stops at the first undeclared identifier ("compilation terminated"): one at a time.
+
+## Bundled tools
+
+`bundleTools` in `build.gradle.kts` downloads pinned glsl_analyzer 1.7.1 and glslang 16.6.0 for **Linux x64 and
+Windows x64**, verifies SHA-256, and puts them in the plugin as `bin/<os>-x64/<exe>` plus `licenses/`.
+It is wired into **every** `PrepareSandboxTask` (runIde uses `prepareSandbox_runIde`, not `prepareSandbox`).
+Lookup order (`find_executable` in `GlslLsp.kt`): configured path -> bundled -> PATH -> `~/.local/bin` etc.
+The executable bit is restored at runtime because plugin install doesn't keep it. glsl_analyzer is GPL-3.0,
+shipped unmodified as a separate process; glslang is BSD-3 and others.
+
+## Build
+
+- Kotlin **2.4.21** (needed to read CLion 2026.3's metadata), `apiVersion = 2.2` so it still runs on 2025.3's stdlib.
+  IntelliJ Platform Gradle Plugin 2.20.1, Gradle 9.9.1 wrapper, JDK 21 toolchain via foojay (auto-downloaded).
+- `localClionPath` in `gradle.properties` builds against an installed CLion (ignored if the dir doesn't exist, then
+  `clion("2025.3")` is downloaded). Compiling against 2026.3 won't catch APIs missing in 2025.3; run `verifyPlugin`.
+- `./gradlew buildPlugin` -> `build/distributions/*.zip` (about 7 MB with the tools). `./gradlew runIde` for a sandbox.
+- Config cache is on: lambdas in the build script must not capture script objects (copy to local vals).
+
+## Tests
+
+`./gradlew test`: plain JUnit 4 on pure functions, no headless IDE (fast, and independent of Nova starting up).
+The IDE-facing classes are thin wrappers; the logic they call is `internal` and text-in/result-out:
+`semantic_highlights`, `expand_includes`, `parse_glslang_output`, `problem_range`, `rename_scope`, `rename_ranges`,
+plus the lexer. One test runs the real bundled glslang end to end (skipped if it isn't built for the OS).
+**Put new logic in a pure function and test it there.**
+
+## Known gaps / ideas
+
+- Vulkan target for glslang (`set=`, `push_constant` give false errors in OpenGL mode); `-D` defines; extra include dirs.
+- Check `.glsl` include files in the context of an including shader.
+- Code folding, structure view / breadcrumbs, Find Usages (can reuse rename scoping), Ctrl+click on `#include`.
+- GLSL injection into C++ raw strings.
+- Never tested on Windows or on CLion 2025.3. No macOS bundle (tools are found on PATH there).
+- Rename: a local that shadows a global in another function is renamed with the global.
 
 ## Style
-Akamitori's preference: snake_case for locals and private helpers where Kotlin/IntelliJ API overrides don't force camelCase. Keep it minimal and explicit, with no framework magic beyond what the platform requires.
+
+Akamitori's preference: snake_case for locals and private helpers where Kotlin/IntelliJ API overrides don't force
+camelCase. Keep it minimal and explicit, with no framework magic beyond what the platform requires.
+Kotlin gotcha already hit once: `Set<Path> + path` adds the path's *name components* (Path is Iterable); use `plusElement`.

@@ -192,54 +192,72 @@ private fun make_block(toks: List<LexTok>, stmt_start: Int, open: Int, close: In
     return Block(if (is_struct) Block.Kind.STRUCT else Block.Kind.INTERFACE, toks[open].start, toks[close].end, emptySet(), has_instance)
 }
 
-private fun plan_rename(project: Project, name: String, def_file: VirtualFile, def_doc: Document, def_offset: Int): Map<VirtualFile, List<TextRange>> {
-    val toks = lex(def_doc.immutableCharSequence)
-    val block = top_level_blocks(toks).firstOrNull { def_offset >= it.from && def_offset < it.to }
-    return when {
-        block?.kind == Block.Kind.FUNCTION -> {
-            val ranges = toks.withIndex()
-                .filter { (i, t) -> t.start >= block.from && t.end <= block.to && is_use(toks, i, name) }
-                .map { (_, t) -> TextRange(t.start, t.end) }
-            mapOf(def_file to ranges)
-        }
-        block != null && (block.kind == Block.Kind.STRUCT || block.has_instance) -> plan_field(project, name, def_file, def_offset)
-        else -> plan_global(project, name, def_file)
+private fun plan_rename(project: Project, name: String, def_file: VirtualFile, def_doc: Document, def_offset: Int): Map<VirtualFile, List<TextRange>> =
+    when (val scope = rename_scope(def_doc.immutableCharSequence, def_offset)) {
+        is RenameScope.Local -> mapOf(def_file to rename_ranges(def_doc.immutableCharSequence, name, scope, def_offset))
+        else -> plan_across_project(project, name, scope, def_file, def_offset)
     }
-}
 
-/** Plain identifier use: right name and not a member access (`.name`). */
-private fun is_use(toks: List<LexTok>, i: Int, name: String) =
-    toks[i].type == GlslTokens.IDENT && toks[i].text == name && toks.getOrNull(i - 1)?.type != GlslTokens.DOT
+private fun plan_global(project: Project, name: String, def_file: VirtualFile) =
+    plan_across_project(project, name, RenameScope.Global, def_file, null)
 
-private fun project_glsl_files(project: Project, also: VirtualFile): Collection<VirtualFile> =
-    FileTypeIndex.getFiles(GlslFileType, GlobalSearchScope.projectScope(project)) + also
-
-private fun plan_global(project: Project, name: String, def_file: VirtualFile): Map<VirtualFile, List<TextRange>> {
+private fun plan_across_project(
+    project: Project, name: String, scope: RenameScope, def_file: VirtualFile, def_offset: Int?,
+): Map<VirtualFile, List<TextRange>> {
     val out = HashMap<VirtualFile, List<TextRange>>()
-    for (vf in project_glsl_files(project, def_file).toSet()) {
+    val files = FileTypeIndex.getFiles(GlslFileType, GlobalSearchScope.projectScope(project)) + def_file
+    for (vf in files.toSet()) {
         ProgressManager.checkCanceled()
         val doc = FileDocumentManager.getInstance().getDocument(vf) ?: continue
-        val toks = lex(doc.immutableCharSequence)
-        val shadowing = top_level_blocks(toks).filter { it.kind == Block.Kind.FUNCTION && name in it.params }
-        val ranges = toks.withIndex()
-            .filter { (i, t) -> is_use(toks, i, name) && shadowing.none { t.start >= it.from && t.end <= it.to } }
-            .map { (_, t) -> TextRange(t.start, t.end) }
+        val ranges = rename_ranges(doc.immutableCharSequence, name, scope, def_offset.takeIf { vf == def_file })
         if (ranges.isNotEmpty()) out[vf] = ranges
     }
     return out
 }
 
-private fun plan_field(project: Project, name: String, def_file: VirtualFile, def_offset: Int): Map<VirtualFile, List<TextRange>> {
-    val out = HashMap<VirtualFile, MutableList<TextRange>>()
-    for (vf in project_glsl_files(project, def_file).toSet()) {
-        ProgressManager.checkCanceled()
-        val doc = FileDocumentManager.getInstance().getDocument(vf) ?: continue
-        val toks = lex(doc.immutableCharSequence)
-        for ((i, t) in toks.withIndex()) {
-            val member_use = t.type == GlslTokens.IDENT && t.text == name && toks.getOrNull(i - 1)?.type == GlslTokens.DOT
-            val the_decl = vf == def_file && t.start == def_offset
-            if (member_use || the_decl) out.getOrPut(vf) { ArrayList() }.add(TextRange(t.start, t.end))
+// ---- pure scoping (unit-tested in GlslRenameTest) ----
+
+/** Where a renamed symbol's occurrences live, decided by where it is declared. */
+sealed interface RenameScope {
+    /** Parameter or local: only inside this function (header + body) of the declaring file. */
+    data class Local(val from: Int, val to: Int) : RenameScope
+    /** Struct member or member of a named interface block: the declaration plus every `.name`. */
+    data object Field : RenameScope
+    /** Function, global, struct, block or macro: every plain use in every file. */
+    data object Global : RenameScope
+}
+
+/** Scope for a symbol declared at `def_offset` in `text`. */
+internal fun rename_scope(text: CharSequence, def_offset: Int): RenameScope {
+    val block = top_level_blocks(lex(text)).firstOrNull { def_offset >= it.from && def_offset < it.to }
+    return when {
+        block == null -> RenameScope.Global
+        block.kind == Block.Kind.FUNCTION -> RenameScope.Local(block.from, block.to)
+        block.kind == Block.Kind.STRUCT || block.has_instance -> RenameScope.Field
+        else -> RenameScope.Global  // unnamed interface block: members are globals
+    }
+}
+
+/**
+ * Occurrences of `name` in one file's `text` for `scope`. `def_offset` is the declaration's offset
+ * if it is in this file (needed for Field, where the declaration itself has no leading dot).
+ */
+internal fun rename_ranges(text: CharSequence, name: String, scope: RenameScope, def_offset: Int?): List<TextRange> {
+    val toks = lex(text)
+    fun is_ident(i: Int) = toks[i].type == GlslTokens.IDENT && toks[i].text == name
+    fun after_dot(i: Int) = toks.getOrNull(i - 1)?.type == GlslTokens.DOT
+    val hits = when (scope) {
+        is RenameScope.Local -> toks.indices.filter { i ->
+            is_ident(i) && !after_dot(i) && toks[i].start >= scope.from && toks[i].end <= scope.to
+        }
+        RenameScope.Field -> toks.indices.filter { i -> is_ident(i) && (after_dot(i) || toks[i].start == def_offset) }
+        RenameScope.Global -> {
+            // Skip functions with a parameter of the same name: inside them the name means the parameter.
+            val shadowing = top_level_blocks(toks).filter { it.kind == Block.Kind.FUNCTION && name in it.params }
+            toks.indices.filter { i ->
+                is_ident(i) && !after_dot(i) && shadowing.none { toks[i].start >= it.from && toks[i].end <= it.to }
+            }
         }
     }
-    return out
+    return hits.map { TextRange(toks[it].start, toks[it].end) }
 }

@@ -1,6 +1,5 @@
 package dev.akamitori.glsl
 
-import com.intellij.lang.ASTNode
 import com.intellij.lang.annotation.AnnotationHolder
 import com.intellij.lang.annotation.Annotator
 import com.intellij.lang.annotation.HighlightSeverity
@@ -20,44 +19,54 @@ import com.intellij.psi.tree.IElementType
  * tokens, so this is the only source of these colors.
  *
  * Runs once per file (the file is the only composite PSI node; everything else is a flat leaf).
+ * The logic is in [semantic_highlights], which works on plain text so it can be unit-tested.
  */
 class GlslSemanticAnnotator : Annotator, DumbAware {
     override fun annotate(element: PsiElement, holder: AnnotationHolder) {
         if (element !is GlslFile) return
-        val tokens = collect_tokens(element.node)
-        val decls = scan_declarations(tokens)
-        classify(tokens, decls) { range, key ->
+        for ((range, key) in semantic_highlights(element.viewProvider.contents)) {
             holder.newSilentAnnotation(HighlightSeverity.INFORMATION).range(range).textAttributes(key).create()
         }
     }
 }
 
-/** A significant token: no whitespace or comments. in_pp = part of a preprocessor line. */
-private class Tok(val type: IElementType, val text: String, val range: TextRange, val in_pp: Boolean)
-
-private fun collect_tokens(file: ASTNode): List<Tok> {
-    val out = ArrayList<Tok>()
-    var in_pp = false
-    var n = file.firstChildNode
-    while (n != null) {
-        val type = n.elementType
-        when {
-            type == TokenType.WHITE_SPACE -> if (n.textContains('\n') && !ends_with_continuation(n, out)) in_pp = false
-            type in GlslTokens.COMMENTS -> if (type == GlslTokens.LINE_COMMENT) in_pp = false
-            else -> {
-                if (type == GlslTokens.PP_DIRECTIVE) in_pp = true
-                out.add(Tok(type, n.text, n.textRange, in_pp))
-            }
-        }
-        n = n.treeNext
-    }
+/** All semantic colours for a GLSL text, in token order. Pure function of the text (unit-tested). */
+internal fun semantic_highlights(text: CharSequence): List<Pair<TextRange, TextAttributesKey>> {
+    val tokens = collect_tokens(text)
+    val decls = scan_declarations(tokens)
+    val out = ArrayList<Pair<TextRange, TextAttributesKey>>()
+    classify(tokens, decls) { range, key -> out.add(range to key) }
     return out
 }
 
-/** A `\` right before the newline continues a preprocessor line (multi-line #define). */
-private fun ends_with_continuation(ws: ASTNode, prev: List<Tok>): Boolean {
-    val last = prev.lastOrNull() ?: return false
-    return last.text == "\\" && last.range.endOffset == ws.startOffset
+/** A significant token: no whitespace or comments. in_pp = part of a preprocessor line. */
+private class Tok(val type: IElementType, val text: String, val range: TextRange, val in_pp: Boolean)
+
+/** Same tokens the PSI tree holds (it is a flat list of lexer tokens), straight from the lexer. */
+private fun collect_tokens(text: CharSequence): List<Tok> {
+    val out = ArrayList<Tok>()
+    var in_pp = false
+    val lexer = GlslLexer()
+    lexer.start(text, 0, text.length, 0)
+    while (true) {
+        val type = lexer.tokenType ?: break
+        val start = lexer.tokenStart
+        val end = lexer.tokenEnd
+        when {
+            type == TokenType.WHITE_SPACE -> {
+                // A `\` right before the newline continues a preprocessor line (multi-line #define).
+                val continued = out.lastOrNull()?.let { it.text == "\\" && it.range.endOffset == start } == true
+                if (text.subSequence(start, end).contains('\n') && !continued) in_pp = false
+            }
+            type in GlslTokens.COMMENTS -> if (type == GlslTokens.LINE_COMMENT) in_pp = false
+            else -> {
+                if (type == GlslTokens.PP_DIRECTIVE) in_pp = true
+                out.add(Tok(type, text.subSequence(start, end).toString(), TextRange(start, end), in_pp))
+            }
+        }
+        lexer.advance()
+    }
+    return out
 }
 
 private class Decls {
@@ -248,8 +257,9 @@ private fun classify(toks: List<Tok>, d: Decls, emit: (TextRange, TextAttributes
             layout_depth > 0 -> GlslColors.LAYOUT_QUALIFIER
             i in d.functions -> GlslColors.FUNCTION_DECLARATION
             t.text in d.structs -> GlslColors.STRUCT_NAME
-            next?.type == GlslTokens.LPAREN -> GlslColors.FUNCTION_CALL
+            // Before the call rule, so function-like macros (SQR(x)) stay macros.
             t.text in d.macros -> GlslColors.MACRO
+            next?.type == GlslTokens.LPAREN -> GlslColors.FUNCTION_CALL
             params != null && t.text in params -> GlslColors.PARAMETER
             t.text in d.globals -> GlslColors.GLOBAL_VAR
             else -> null
