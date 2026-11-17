@@ -106,11 +106,13 @@ The IDE-facing classes are thin wrappers; the logic they call is `internal` and 
 
 - Sticky lines: would need a nested PSI (breadcrumbs work around it via `BreadcrumbsProvider.getParent`).
 - GLSL injection into C++ raw strings.
-- Never tested on Windows: follow **`docs/testing-windows.md`** (agent-runnable plan; sample project in
-  `testdata/sample-project`, checked by `GlslSampleProjectTest`). No macOS bundle (tools are found on PATH there).
+- Windows x64 passed the full plan on 2026-11-18 (`docs/windows-test-results.md`; re-run with
+  **`docs/testing-windows.md`**, sample project in `testdata/sample-project`, checked by `GlslSampleProjectTest`).
+  No macOS bundle (tools are found on PATH there).
 
 ## Style
 
 Akamitori's preference: snake_case for locals and private helpers where Kotlin/IntelliJ API overrides don't force
 camelCase. Keep it minimal and explicit, with no framework magic beyond what the platform requires.
+**Language ID is `dev.akamitori.glsl`, never `GLSL`**: language IDs are global and glsl4idea owns `GLSL` (a duplicate throws `ImplementationConflictException` and kills the plugin); `GlslPluginXmlTest` guards it.
 Kotlin gotcha already hit once: `Set<Path> + path` adds the path's *name components* (Path is Iterable); use `plusElement`.
