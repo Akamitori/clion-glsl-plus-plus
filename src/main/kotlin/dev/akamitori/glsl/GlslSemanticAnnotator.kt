@@ -77,6 +77,8 @@ private class Decls {
     val functions = HashSet<Int>()
     /** Parameter scopes in token order: (first, last, names); header only for a prototype, header + body for a definition. */
     val scopes = ArrayList<Triple<Int, Int, Set<String>>>()
+    /** Scope start (as in `scopes`) -> locals the function body declares; they shadow globals there. */
+    val locals = HashMap<Int, Set<String>>()
 }
 
 private val SWIZZLE = Regex("^([xyzw]{1,4}|[rgba]{1,4}|[stpq]{1,4})$")
@@ -128,6 +130,7 @@ private fun scan_declarations(toks: List<Tok>): Decls {
                 fn != null -> {
                     d.functions.add(fn.name)
                     d.scopes.add(Triple(fn.lparen, close, fn.params))
+                    d.locals[fn.lparen] = local_names(toks, end + 1, close, d)
                 }
                 // Interface block: `uniform Name { members } instance;`  /  struct definition
                 else -> {
@@ -151,6 +154,22 @@ private fun scan_declarations(toks: List<Tok>): Decls {
         }
     }
     return d
+}
+
+/** Locals declared in toks [from, to): an identifier after a type, followed by `;` `=` `,` or `[`. */
+private fun local_names(toks: List<Tok>, from: Int, to: Int, d: Decls): Set<String> {
+    val out = HashSet<String>()
+    for (i in from until to) {
+        val t = toks[i]
+        if (!is_ident(t)) continue
+        val prev = toks.getOrNull(i - 1) ?: continue
+        val next = toks.getOrNull(i + 1) ?: continue
+        val after_type = is_type_like(prev, d) || (is_ident(prev) && toks.getOrNull(i - 2)?.type != GlslTokens.DOT)
+        val declarator_end = next.type == GlslTokens.SEMICOLON || next.type == GlslTokens.COMMA ||
+            next.type == GlslTokens.LBRACKET || (next.type == GlslTokens.OPERATOR && next.text == "=")
+        if (after_type && declarator_end) out.add(t.text)
+    }
+    return out
 }
 
 private fun matching_brace(toks: List<Tok>, open: Int): Int {
@@ -247,7 +266,9 @@ private fun classify(toks: List<Tok>, d: Decls, emit: (TextRange, TextAttributes
         if (!is_ident(t)) continue
 
         while (scope < d.scopes.size && d.scopes[scope].second < i) scope++
-        val params = d.scopes.getOrNull(scope)?.takeIf { it.first <= i }?.third
+        val current = d.scopes.getOrNull(scope)?.takeIf { it.first <= i }
+        val params = current?.third
+        val locals = current?.let { d.locals[it.first] }
 
         val prev = toks.getOrNull(i - 1)
         val next = toks.getOrNull(i + 1)
@@ -261,6 +282,7 @@ private fun classify(toks: List<Tok>, d: Decls, emit: (TextRange, TextAttributes
             t.text in d.macros -> GlslColors.MACRO
             next?.type == GlslTokens.LPAREN -> GlslColors.FUNCTION_CALL
             params != null && t.text in params -> GlslColors.PARAMETER
+            locals != null && t.text in locals -> null  // a local that shadows a global stays plain
             t.text in d.globals -> GlslColors.GLOBAL_VAR
             else -> null
         }

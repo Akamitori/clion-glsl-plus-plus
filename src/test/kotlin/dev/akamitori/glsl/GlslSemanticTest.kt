@@ -116,4 +116,19 @@ class GlslSemanticTest {
         semantic_highlights("{{{ ( ] ; } float (")
         semantic_highlights("void f(")
     }
+
+    @Test fun `a local that shadows a global is not coloured as the global`() {
+        val text = """
+            uniform float exposure;
+            float tonemap(float c) { return c * exposure; }
+            void main() {
+                float exposure = 2.0;
+                float y = exposure * 3.0;
+            }
+        """.trimIndent()
+        assertEquals(GlslColors.GLOBAL_VAR, key_at(text, "exposure", 0))  // the uniform
+        assertEquals(GlslColors.GLOBAL_VAR, key_at(text, "exposure", 1))  // used in tonemap
+        assertEquals(null, key_at(text, "exposure", 2))  // the local in main
+        assertEquals(null, key_at(text, "exposure", 3))  // its use
+    }
 }

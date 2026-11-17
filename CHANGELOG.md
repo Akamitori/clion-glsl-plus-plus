@@ -5,6 +5,10 @@
 - **Requires CLion 2026.2 or newer** (was 2025.3). Moved to the LspIntegrationProvider / LspClient API introduced
   in 2026.2; no deprecated, experimental or scheduled-for-removal API left. `verifyPlugin` passes on 2026.2 and 2026.3.
 - Bundled-tool and PATH lookup no longer use internal or deprecated platform helpers.
+- **All errors at once**: glslang used to stop at the first error of any kind; it now reports every error in the
+  file (except after a syntax error). Falls back to first-error-only if glslang's error recovery crashes.
+- **Shadowing**: rename no longer renames a local that happens to share a global's name, and such a local is no
+  longer coloured as the global.
 
 ## 0.9.0
 

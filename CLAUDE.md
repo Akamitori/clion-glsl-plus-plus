@@ -60,7 +60,9 @@ Hover and completion go through the platform LSP client and work as-is.
   project stage file whose include tree contains it (`find_host`, same folder first), with the library's text from
   the editor. `Expanded.strings` records each source string's path, parent and include line, and `problems_in`
   maps errors to any file in that tree: its own lines, or the `#include` line for errors in files it includes.
-- glslang stops at the first undeclared identifier ("compilation terminated"): one at a time.
+- glslang stops at the **first error of any kind** ("compilation terminated") unless given **`-C`** (cascading
+  errors), which reports them all. We always pass `-C`; glslang warns it can crash on heavy error recovery, so a run
+  that doesn't exit 0/2 (`glslang_ran`) is retried without it. Syntax errors still stop it (the parser can't recover).
 - Annotators must be `DumbAware`. CLion briefly re-enters dumb mode about 1.5 s after a project opens; a
   non-DumbAware annotator is skipped then and its errors only appear after the next edit.
 
@@ -104,7 +106,6 @@ The IDE-facing classes are thin wrappers; the logic they call is `internal` and 
 - Breadcrumbs / sticky lines: need a nested PSI, which this plugin deliberately doesn't have.
 - GLSL injection into C++ raw strings.
 - Never tested on Windows. No macOS bundle (tools are found on PATH there).
-- Rename: a local that shadows a global in another function is renamed with the global.
 
 ## Style
 

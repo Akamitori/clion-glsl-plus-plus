@@ -118,11 +118,14 @@ class GlslangAnnotatorTest {
 
     @Test fun `glslang arguments per target`() {
         val spv = Path.of("out.spv")
-        assertEquals(listOf("--stdin", "-S", "frag"), glslang_args("frag", "opengl", spv))
+        assertEquals(listOf("--stdin", "-S", "frag", "-C"), glslang_args("frag", "opengl", spv))
+        assertEquals(listOf("--stdin", "-S", "frag"), glslang_args("frag", "opengl", spv, cascade = false))
         assertEquals(
-            listOf("--stdin", "-S", "comp", "-V", "--target-env", "vulkan1.3", "-o", "out.spv"),
+            listOf("--stdin", "-S", "comp", "-C", "-V", "--target-env", "vulkan1.3", "-o", "out.spv"),
             glslang_args("comp", "vulkan1.3", spv),
         )
+        assertTrue(glslang_ran(0) && glslang_ran(2))
+        assertFalse(glslang_ran(1) || glslang_ran(134) || glslang_ran(139) || glslang_ran(-1))
     }
 
     @Test fun `stdin as source name is this file`() {
@@ -285,9 +288,9 @@ class GlslangAnnotatorTest {
     }
 
     @Test fun `real glslang sees injected defines`() {
-        // Without the define, SCALE is undeclared on line 7 (0-based 6); with it, only undefined_thing remains.
+        // Without the define, SCALE is undeclared on line 7 (0-based 6) too; with it, only undefined_thing remains.
         val options = CheckOptions(target = "vulkan1.3")
-        assertEquals(listOf(undeclared(6, "SCALE")), check(vulkan_shader, options))
+        assertEquals(listOf(undeclared(6, "SCALE"), undeclared(7, "undefined_thing")), check(vulkan_shader, options))
     }
 
     @Test fun `real glslang checks a library through its host`() {
@@ -297,5 +300,23 @@ class GlslangAnnotatorTest {
         assertEquals(listOf(undeclared(1, "not_declared")), check(shader, target = lib))
         // As seen from the shader: reported on its #include line.
         assertEquals(listOf(Problem(1, "In common/lighting.glsl:2: 'not_declared' : undeclared identifier", null, false)), check(shader))
+    }
+
+    @Test fun `real glslang reports every error, not just the first`() {
+        val shader = """
+            #version 460
+            out vec4 c;
+            void main() {
+                int a = 1.5;
+                float x = first_missing * 2.0;
+                second_missing = 3;
+                float y = third_missing(1.0);
+                bool b = vec3(1.0);
+                c = vec4(first_missing);
+            }
+        """.trimIndent()
+        val problems = check(shader)
+        assertEquals(problems.toString(), listOf(3, 4, 5, 6, 7), problems.map { it.line })
+        assertEquals(listOf("first_missing", "second_missing"), problems.filter { "undeclared" in it.message }.map { it.token })
     }
 }

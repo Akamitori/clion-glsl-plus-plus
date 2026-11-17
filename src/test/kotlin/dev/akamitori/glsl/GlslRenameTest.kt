@@ -65,4 +65,19 @@ class GlslRenameTest {
     @Test fun `field rename in another file has no declaration offset`() {
         assertEquals(listOf(1), hits("shininess", RenameScope.Field, null))
     }
+
+    @Test fun `global rename skips functions where a local shadows it`() {
+        val text = """
+            uniform float exposure;
+            float tonemap(float c) { return c * exposure; }
+            void main() {
+                float exposure = 2.0;
+                Material exposure2;
+                float y = exposure * 3.0;
+            }
+        """.trimIndent()
+        val all = Regex("\\bexposure\\b").findAll(text).map { it.range.first }.toList()
+        val hits = rename_ranges(text, "exposure", RenameScope.Global, all[0]).map { all.indexOf(it.startOffset) }
+        assertEquals(listOf(0, 1), hits)  // the uniform and its use in tonemap, not main's local
+    }
 }

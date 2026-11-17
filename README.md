@@ -74,7 +74,7 @@ File extensions: `.glsl .vert .frag .geom .comp .tesc .tese .mesh .task .rgen .r
   folder); its errors show up in the library, marked "checked as part of <shader>". A library nothing includes
   isn't checked.
   `#include "..."` / `<...>` is resolved relative to the file, then the project root, then the configured include folders.
-- glslang stops at the first undeclared identifier, so those show up one at a time.
+- All errors in a file are reported at once, except after a syntax error, where glslang has to stop.
 
 ## Troubleshooting
 

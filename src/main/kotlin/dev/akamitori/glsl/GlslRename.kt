@@ -29,10 +29,9 @@ import com.intellij.psi.tree.IElementType
  *  - declared inside a function (parameter or local): only inside that function;
  *  - a struct member, or a member of a named interface block: the declaration plus every `.name`;
  *  - top level (function, global, struct, macro): every GLSL file in the project, skipping
- *    functions that have a parameter of the same name.
+ *    functions that have a parameter or local of the same name.
  *
- * Not handled: a local variable that shadows a global of the same name in another function
- * is renamed along with the global. Built-ins (no declaration in your code) can't be renamed.
+ * Built-ins (no declaration in your code) can't be renamed.
  */
 class GlslRenameAction : AnAction(), DumbAware, GlslEditorAction {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -158,7 +157,11 @@ private fun offset_of(doc: Document, line: Int, character: Int): Int {
 }
 
 /** A brace block at file level: a function (with its header and parameter names), a struct, or an interface block. */
-private class Block(val kind: Kind, val from: Int, val to: Int, val params: Set<String>, val has_instance: Boolean) {
+/** params and locals are the names a function declares itself; they shadow globals of the same name. */
+private class Block(
+    val kind: Kind, val from: Int, val to: Int, val params: Set<String>, val has_instance: Boolean,
+    val locals: Set<String> = emptySet(),
+) {
     enum class Kind { FUNCTION, STRUCT, INTERFACE }
 }
 
@@ -202,11 +205,33 @@ private fun make_block(toks: List<LexTok>, stmt_start: Int, open: Int, close: In
             if (t.type == GlslTokens.IDENT) last = t.text
             if (t.type == GlslTokens.COMMA || t.type == GlslTokens.RPAREN) { last?.let(params::add); last = null }
         }
-        return Block(Block.Kind.FUNCTION, toks[lp.coerceAtLeast(0)].start, toks[close].end, params, false)
+        return Block(Block.Kind.FUNCTION, toks[lp.coerceAtLeast(0)].start, toks[close].end, params, false,
+            local_declarations(toks, open + 1, close))
     }
     val is_struct = (stmt_start until open).any { toks[it].type == GlslTokens.KEYWORD && toks[it].text == "struct" }
     val has_instance = toks.getOrNull(close + 1)?.type == GlslTokens.IDENT
     return Block(if (is_struct) Block.Kind.STRUCT else Block.Kind.INTERFACE, toks[open].start, toks[close].end, emptySet(), has_instance)
+}
+
+/**
+ * Names declared as locals in tokens [from, to): an identifier right after a type (built-in type, or
+ * an identifier used as a struct type) and followed by `;`, `=`, `,` or `[`, e.g. `float lit = ...`,
+ * `Material mat;`. Good enough for shadowing checks; not a parser.
+ */
+internal fun local_declarations(toks: List<LexTok>, from: Int, to: Int): Set<String> {
+    val out = HashSet<String>()
+    for (i in from until to) {
+        val t = toks[i]
+        if (t.type != GlslTokens.IDENT) continue
+        val prev = toks.getOrNull(i - 1) ?: continue
+        val next = toks.getOrNull(i + 1) ?: continue
+        val after_type = prev.type == GlslTokens.TYPE ||
+            (prev.type == GlslTokens.IDENT && toks.getOrNull(i - 2)?.type != GlslTokens.DOT)
+        val declarator_end = next.type == GlslTokens.SEMICOLON || next.type == GlslTokens.COMMA ||
+            next.type == GlslTokens.LBRACKET || (next.type == GlslTokens.OPERATOR && next.text == "=")
+        if (after_type && declarator_end) out.add(t.text)
+    }
+    return out
 }
 
 private fun plan_rename(project: Project, name: String, def_file: VirtualFile, def_doc: Document, def_offset: Int): Map<VirtualFile, List<TextRange>> =
@@ -269,8 +294,8 @@ internal fun rename_ranges(text: CharSequence, name: String, scope: RenameScope,
         }
         RenameScope.Field -> toks.indices.filter { i -> is_ident(i) && (after_dot(i) || toks[i].start == def_offset) }
         RenameScope.Global -> {
-            // Skip functions with a parameter of the same name: inside them the name means the parameter.
-            val shadowing = top_level_blocks(toks).filter { it.kind == Block.Kind.FUNCTION && name in it.params }
+            // Skip functions with a parameter or local of the same name: inside them the name means that.
+            val shadowing = top_level_blocks(toks).filter { it.kind == Block.Kind.FUNCTION && (name in it.params || name in it.locals) }
             toks.indices.filter { i ->
                 is_ident(i) && !after_dot(i) && shadowing.none { toks[i].start >= it.from && toks[i].end <= it.to }
             }

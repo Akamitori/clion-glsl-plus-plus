@@ -80,14 +80,17 @@ class GlslangAnnotator : ExternalAnnotator<GlslangAnnotator.Input, List<Problem>
         // shader), so send it to a temp file and delete it.
         val spv = Files.createTempFile("glsl-check-", ".spv")
         try {
-            val cmd = GeneralCommandLine(exe.toString())
-                .withParameters(glslang_args(stage, input.options.target, spv))
-                .withWorkDirectory(host.parent.toFile())
-                .withCharset(StandardCharsets.UTF_8)
-            val handler = CapturingProcessHandler(cmd)
-            handler.processInput.use { it.write(source.toByteArray(StandardCharsets.UTF_8)) }
-            val out = handler.runProcess(5000)
-            if (out.isTimeout) return emptyList()
+            fun run(cascade: Boolean): com.intellij.execution.process.ProcessOutput? {
+                val cmd = GeneralCommandLine(exe.toString())
+                    .withParameters(glslang_args(stage, input.options.target, spv, cascade))
+                    .withWorkDirectory(host.parent.toFile())
+                    .withCharset(StandardCharsets.UTF_8)
+                val handler = CapturingProcessHandler(cmd)
+                handler.processInput.use { it.write(source.toByteArray(StandardCharsets.UTF_8)) }
+                return handler.runProcess(5000).takeUnless { it.isTimeout }
+            }
+            // All errors at once; if glslang's error recovery crashes, fall back to first-error-only.
+            val out = run(cascade = true)?.takeIf { glslang_ran(it.exitCode) } ?: run(cascade = false) ?: return emptyList()
             val problems = problems_in(out.stdout + "\n" + out.stderr, expanded, target)
             return if (target == null) problems
             else problems.map { it.copy(message = "${it.message} (checked as part of ${host.fileName})") }
@@ -136,10 +139,18 @@ data class CheckOptions(
     val include_dirs: List<Path> = emptyList(),
 )
 
-/** glslang command line (after the executable) for a stage and target. */
-internal fun glslang_args(stage: String, target: String, spv_out: Path): List<String> =
-    if (target == "opengl") listOf("--stdin", "-S", stage)
-    else listOf("--stdin", "-S", stage, "-V", "--target-env", target, "-o", spv_out.toString())
+/**
+ * glslang command line (after the executable) for a stage and target. `cascade` adds -C: without it
+ * glslang stops at the first error of any kind; with it, it reports them all. glslang warns that -C
+ * can crash on heavy error recovery, so callers retry without it if that happens.
+ */
+internal fun glslang_args(stage: String, target: String, spv_out: Path, cascade: Boolean = true): List<String> {
+    val base = listOf("--stdin", "-S", stage) + (if (cascade) listOf("-C") else emptyList())
+    return if (target == "opengl") base else base + listOf("-V", "--target-env", target, "-o", spv_out.toString())
+}
+
+/** glslang exits 0 (ok) or 2 (compile errors); anything else (signal, 1 = usage) means it didn't really run. */
+internal fun glslang_ran(exit_code: Int) = exit_code == 0 || exit_code == 2
 
 private val DEFINE_NAME = Regex("^[A-Za-z_][A-Za-z0-9_]*$")
 
