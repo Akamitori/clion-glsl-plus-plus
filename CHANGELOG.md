@@ -8,7 +8,8 @@ Marketplace preparation.
   still labelled GLSL; the plugin ID (`dev.akamitori.glsl`) is unchanged, so it updates 1.0.0 in place.
 - **MIT license** for the plugin (`LICENSE`, also shipped in `licenses/`). The description links the bundled tools'
   sources and licenses, and says how to use the plugin on macOS.
-- Store icon (`pluginIcon.svg`).
+- New icons: a GLSL++ hexagon for the store and plugin list (`pluginIcon.svg`), and a matching "G" hexagon for
+  shader files in the editor. Letters are outlines from Noto Sans (OFL), so they look the same in every IDE.
 - Removed the Ctrl+hover underline: it needed internal platform API (`CtrlMouseAction`), which the Marketplace
   flags and which can break in any CLion update. Ctrl+click and Ctrl+B still go to the declaration.
   `verifyPlugin` now fails on internal API too, and reports none.
