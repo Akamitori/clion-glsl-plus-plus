@@ -25,6 +25,19 @@
        separate programs; their license texts are in the plugin's <code>licenses</code> folder.</p>
     ]]></description>
 
+    <change-notes><![CDATA[
+    <p><b>1.0.1</b>: first public release.</p>
+    <ul>
+      <li>Go to Declaration, hover docs, completion and Reformat Code (glsl_analyzer, bundled).</li>
+      <li>Compiler errors as you type (glslang, bundled), all at once, with <code>#include</code>, defines and an
+          OpenGL or Vulkan target per project; include libraries are checked through the shaders that use them.</li>
+      <li>Rename and Find Usages across files; folding, structure view and breadcrumbs.</li>
+      <li>Semantic colours for your functions, parameters, globals, structs, fields, macros, with built-ins apart.</li>
+      <li>Works next to other GLSL plugins, and warns if one of them owns some shader extensions.</li>
+    </ul>
+    <p>Full history: <a href="https://github.com/Akamitori/clion-glsl/blob/main/CHANGELOG.md">CHANGELOG.md</a>.</p>
+    ]]></change-notes>
+
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.lsp</depends>
 

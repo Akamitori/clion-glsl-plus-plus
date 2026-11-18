@@ -11,8 +11,8 @@ and tell you what they see, then confirm it in the log where the table says so.
 
 - **CLion 2026.2 or newer** installed (the plugin refuses older versions).
 - For part A: a **JDK 17+** to start Gradle (Gradle downloads JDK 21 and the bundled tools itself), network access.
-- The source: this repo (clone it, or `git clone clion-glsl.bundle clion-glsl` from the USB copy).
-- The plugin zip: `clion-glsl-<version>.zip` (from the USB copy, or built in A3).
+- The source: a clone of this repo.
+- The plugin zip: `clion-glsl-<version>.zip`, built in A3.
 
 Paths you'll need (replace `2026.x` with the installed CLion version):
 

@@ -2,10 +2,10 @@
 
 ## 1.0.1 (2026-11-18)
 
-Marketplace preparation.
+First public release, on the JetBrains Marketplace.
 
 - Renamed to **GLSL++** in the plugin list and store ("GLSL" is taken there). File types, settings and colours are
-  still labelled GLSL; the plugin ID (`dev.akamitori.glsl`) is unchanged, so it updates 1.0.0 in place.
+  still labelled GLSL.
 - **MIT license** for the plugin (`LICENSE`, also shipped in `licenses/`). The description links the bundled tools'
   sources and licenses, and says how to use the plugin on macOS.
 - New icons: a GLSL++ hexagon for the store and plugin list (`pluginIcon.svg`), and a matching "G" hexagon for

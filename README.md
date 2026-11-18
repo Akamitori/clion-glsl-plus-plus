@@ -1,6 +1,6 @@
-# clion-glsl
+# GLSL++ for CLion
 
-GLSL support for CLion:
+GLSL shader support for CLion, including CLion Nova:
 
 - **Navigation and hover docs** come from the [glsl_analyzer](https://github.com/nolanderc/glsl_analyzer) language server
   (Ctrl+B / Ctrl+click, completion, formatting, `#include` awareness).
@@ -13,13 +13,15 @@ Both tools are **bundled** for Linux x64 and Windows x64, so there is nothing el
 
 Requires CLion 2026.2 or newer.
 
-## Install on a new machine
+- **Rename** (Shift+F6) and **Find Usages** (Alt+F7) across files, **folding**, **structure view** and **breadcrumbs**.
 
-1. Copy `clion-glsl-<version>.zip` over (from `build/distributions/`, see below).
-2. CLion > Settings > Plugins > gear icon > **Install Plugin from Disk…** > pick the zip.
-3. Restart CLion, then open any `.vert`/`.frag`/`.comp`/`.glsl`… file.
+## Install
 
-That's it on Linux x64 and Windows x64. On macOS or ARM, install the tools yourself and the plugin finds them on
+CLion > Settings > Plugins > **Marketplace**, search for **GLSL++**, install, restart.
+
+Or build the zip yourself (see *Build*) and use Plugins > gear icon > **Install Plugin from Disk…**.
+
+That's all on Linux x64 and Windows x64. On macOS or ARM, install the tools yourself and the plugin finds them on
 `PATH` (or set their paths in Settings > Languages & Frameworks > GLSL):
 
 ```sh
@@ -81,9 +83,15 @@ File extensions: `.glsl .vert .frag .geom .comp .tesc .tese .mesh .task .rgen .r
 
 - **No completion / navigation**: check the LSP widget in the status bar. Help > Show Log in Files, search for `glsl_analyzer`.
 - **"glsl_analyzer not found" balloon**: you're on a platform without a bundled copy, or a configured path is wrong.
-- **Another GLSL plugin installed**: disable it so file types don't clash.
+- **"Some shader files are not handled by this GLSL plugin"**: another GLSL plugin (or a File Types setting) owns
+  those extensions. Disable the other plugin, or reassign them in Settings > Editor > File Types.
 
 ## Licenses
 
 The plugin itself is MIT-licensed (`LICENSE`). It bundles unmodified releases of glsl_analyzer (GPL-3.0) and glslang (BSD-3-Clause and others),
 which run as separate processes. Their license texts are in the plugin's `licenses/` folder.
+
+## Development
+
+Architecture and the non-obvious parts (CLion Nova, glslang quirks, build notes) are in `CLAUDE.md`.
+Tests: `./gradlew test`. A manual test plan with a sample project: `docs/testing-windows.md`, `testdata/sample-project/`.

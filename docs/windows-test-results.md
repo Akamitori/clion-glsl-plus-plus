@@ -1,10 +1,10 @@
 # Windows test results
 
-Run on 2026-11-17/18 by Claude Code following `docs/testing-windows.md`, built from commit `6ffe218`.
+Run on 2026-11-17/18 by Claude Code following `docs/testing-windows.md`, built from commit `e3fc9e3`.
 
 **Verdict: everything passes on Windows x64, after one fix.** The plugin crashed CLion on startup when
 glsl4idea ("GLSL Support") was also installed (see *Failure 1*). With the fix, parts A to C all pass.
-The fix is **not committed yet**: it is in `windows-fix.patch` next to this report on the USB copy.
+The fix is commit `80c8bf7` ("Use a unique language ID so the plugin coexists with glsl4idea").
 
 ## Environment
 
@@ -83,7 +83,7 @@ rmordechay's plugin uses `Glsl` (no crash), but claims the same file extensions.
 **Recovery on this machine.** The IDE could not reach the Plugins page, so with CLion closed the plugin folder was
 replaced by the fixed build, and `GLSL` and `OpenGL-Plugin` were added to `%APPDATA%\JetBrains\CLion2026.3\disabled_plugins.txt`.
 
-**Fix** (`windows-fix.patch`, applies to `6ffe218`):
+**Fix** (commit `80c8bf7`):
 
 - `GlslLanguage.kt`: language ID is now `dev.akamitori.glsl` (`GLSL_LANGUAGE_ID`), and `getDisplayName()` returns
   `"GLSL"`, so the UI is unchanged.
